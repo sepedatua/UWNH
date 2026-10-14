@@ -1,0 +1,60 @@
+# ==============================================================================
+# Uncharted Waters: New Horizons — Production .htaccess
+# ==============================================================================
+
+RewriteEngine On
+RewriteBase /
+
+# 1. Enforce HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# 2. MIME Types
+AddType application/wasm .wasm
+AddType audio/ogg .ogg
+AddType image/webp .webp
+AddType application/json .json
+
+# 3. Deflate / Gzip Compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript
+    AddOutputFilterByType DEFLATE application/javascript application/x-javascript application/json
+    AddOutputFilterByType DEFLATE application/wasm
+    AddOutputFilterByType DEFLATE image/svg+xml
+</IfModule>
+
+# 4. Long-Term Immutable Browser Caching for Retro Assets
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType application/wasm "access plus 1 year"
+    ExpiresByType audio/ogg "access plus 1 year"
+    ExpiresByType image/webp "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType text/css "access plus 1 year"
+    ExpiresByType text/html "access plus 0 seconds"
+    ExpiresByType application/json "access plus 0 seconds"
+</IfModule>
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(wasm|ogg|png|webp|ico|jpg|jpeg|svg)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+    <FilesMatch "\.(html|htm)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+    </FilesMatch>
+
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# 5. SPA Routing: Allow /server/ to pass through to PHP, route everything else to index.html
+RewriteCond %{REQUEST_URI} ^/server/ [NC]
+RewriteRule ^ - [L]
+
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+RewriteRule ^ index.html [L]
