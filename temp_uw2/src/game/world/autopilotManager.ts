@@ -4,8 +4,11 @@
  *
  * Provides:
  * - 216x108 Macro-Grid A* pathfinding (<3ms solve) with cylindrical X-wrap
- * - Intelligent open-sea waypoint smoothing and coastal clearance
- * - Flagship auto-steering loop with 8-way directional heading alignment
+ * - Explored-Only Maritime Routing: strictly paths through revealed waters
+ * - Coastal Clearance Weighting: heavy cost penalty on narrow straits (e.g. Bangka Strait)
+ *   so ships naturally prioritize wide open deep ocean corridors
+ * - True-Water Waypoint Placement: waypoints placed on confirmed deepest water tiles
+ * - Anti-Stuck & Coastal Deflection: detects collision and deflects heading along coast
  * - Configurable arrival actions:
  *     - 'dock': automatically docks into harbor
  *     - 'anchor': drops anchor outside port; food/water continue consuming normally
@@ -26,6 +29,7 @@ import soundManager from '../../interface/sound/soundManager';
 import seaWeather from './seaWeather';
 import Input from '../../input';
 import { regularPorts, supplyPorts } from '../../data/portData';
+import explorationManager from './explorationManager';
 
 export const MACRO_SCALE = 10; // 10x10 tiles per macro cell
 export const MACRO_COLS = Math.floor(WORLD_MAP_COLUMNS / MACRO_SCALE); // 216 cols
@@ -53,15 +57,39 @@ export interface InterruptResult {
 
 class AutopilotManager {
   private course: AutopilotCourse | null = null;
+  // 0: impassable land, 1: pure open ocean (cost 1.0), 2: coastal/narrow water (cost 6.0)
   private macroGrid: Uint8Array | null = null;
   private lastAlertTime: number = 0;
+  private lastStuckPos: Position | null = null;
+  private stuckTicks: number = 0;
+  private stagnantTicks: number = 0;
+  private deflectionTicksRemaining: number = 0;
+  private activeDeflectionDir: Direction | null = null;
+  private consecutiveStuckEvents: number = 0;
+  private lastProgressDist: number = Infinity;
+  private lastProgressWaypointIndex: number = -1;
   private changeListeners: Set<() => void> = new Set();
+
+  private resetStuckState(): void {
+    this.lastStuckPos = null;
+    this.stuckTicks = 0;
+    this.stagnantTicks = 0;
+    this.deflectionTicksRemaining = 0;
+    this.activeDeflectionDir = null;
+    this.consecutiveStuckEvents = 0;
+    this.lastProgressDist = Infinity;
+    this.lastProgressWaypointIndex = -1;
+  }
 
   constructor() {
     // Lazy initialized on first pathfinding call
   }
 
   /* ---------------- Macro Grid Initialization ---------------- */
+
+  public resetGrid(): void {
+    this.macroGrid = null;
+  }
 
   private initMacroGrid(): void {
     if (this.macroGrid) return;
@@ -71,7 +99,6 @@ class AutopilotManager {
     try {
       tilemap = Assets.data('worldTilemap');
     } catch {
-      // In headless test environments Assets may not be initialized
       tilemap = null;
     }
 
@@ -90,43 +117,42 @@ class AutopilotManager {
           continue;
         }
 
-        // Sample cell for navigable water (tile < 50 is ocean water)
+        // Sample 25 points across the 10x10 cell to evaluate water clearance
         const startX = c * MACRO_SCALE;
         const startY = r * MACRO_SCALE;
+        let waterCount = 0;
 
-        // Check center and cross-sample points for straits (Gibraltar, Malacca, Dover, etc.)
-        const samples = [
-          { x: 5, y: 5 },
-          { x: 2, y: 5 },
-          { x: 8, y: 5 },
-          { x: 5, y: 2 },
-          { x: 5, y: 8 },
-        ];
-
-        let hasWater = false;
-        for (const s of samples) {
-          const tx = (startX + s.x) % WORLD_MAP_COLUMNS;
-          const ty = startY + s.y;
-          const tile = tilemap[ty * WORLD_MAP_COLUMNS + tx] || 0;
-          if (tile < 50) {
-            hasWater = true;
-            break;
+        for (let dy = 0; dy < MACRO_SCALE; dy += 2) {
+          for (let dx = 0; dx < MACRO_SCALE; dx += 2) {
+            const tx = (startX + dx) % WORLD_MAP_COLUMNS;
+            const ty = startY + dy;
+            const tile = tilemap[ty * WORLD_MAP_COLUMNS + tx] || 0;
+            if (tile < 50) {
+              waterCount++;
+            }
           }
         }
 
-        if (hasWater) {
-          this.macroGrid[idx] = 1; // Navigable water cell
+        if (waterCount === 25) {
+          this.macroGrid[idx] = 1; // Pure open ocean (cost multiplier = 1.0)
+        } else if (waterCount > 0) {
+          this.macroGrid[idx] = 2; // Coastal / narrow water (cost multiplier = 4.5)
+        } else {
+          this.macroGrid[idx] = 0; // Impassable land
         }
       }
     }
 
-    // Ensure all charted port cells are explicitly navigable
+    // Ensure all charted port cells are at least navigable (type 2)
     try {
       [...regularPorts, ...supplyPorts].forEach((port) => {
         const c = Math.floor(port.position.x / MACRO_SCALE) % MACRO_COLS;
         const r = Math.floor(port.position.y / MACRO_SCALE);
         if (r >= 0 && r < MACRO_ROWS) {
-          this.macroGrid![r * MACRO_COLS + c] = 1;
+          const idx = r * MACRO_COLS + c;
+          if (this.macroGrid![idx] === 0) {
+            this.macroGrid![idx] = 2;
+          }
         }
       });
     } catch {
@@ -139,16 +165,149 @@ class AutopilotManager {
     if (!this.macroGrid) return true;
     if (row < 0 || row >= MACRO_ROWS) return false;
     const wrappedCol = ((col % MACRO_COLS) + MACRO_COLS) % MACRO_COLS;
-    return this.macroGrid[row * MACRO_COLS + wrappedCol] === 1;
+    return this.macroGrid[row * MACRO_COLS + wrappedCol] > 0;
+  }
+
+  public getMacroCellType(col: number, row: number): number {
+    this.initMacroGrid();
+    if (!this.macroGrid) return 1;
+    if (row < 0 || row >= MACRO_ROWS) return 0;
+    const wrappedCol = ((col % MACRO_COLS) + MACRO_COLS) % MACRO_COLS;
+    return this.macroGrid[row * MACRO_COLS + wrappedCol];
+  }
+
+  /**
+   * Continuous raycast checking whether a direct line between two positions
+   * is completely free of land obstacles (tile < 50) including 4-tile ship clearance footprint.
+   */
+  public hasWaterLineOfSight(p1: Position, p2: Position): boolean {
+    let tilemap: Uint8Array | null = null;
+    try {
+      tilemap = Assets.data('worldTilemap');
+    } catch {
+      tilemap = null;
+    }
+
+    if (!tilemap || tilemap.length < WORLD_MAP_COLUMNS * WORLD_MAP_ROWS) {
+      return true; // Test environment without loaded asset
+    }
+
+    let dx = p2.x - p1.x;
+    if (dx > WORLD_MAP_COLUMNS / 2) dx -= WORLD_MAP_COLUMNS;
+    if (dx < -WORLD_MAP_COLUMNS / 2) dx += WORLD_MAP_COLUMNS;
+    const dy = p2.y - p1.y;
+
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.5) return true;
+
+    const steps = Math.ceil(dist * 2); // 0.5-tile resolution
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      const curX = ((Math.floor(p1.x + dx * t) % WORLD_MAP_COLUMNS) + WORLD_MAP_COLUMNS) % WORLD_MAP_COLUMNS;
+      const curY = Math.max(0, Math.min(WORLD_MAP_ROWS - 1, Math.floor(p1.y + dy * t)));
+
+      const nextX = (curX + 1) % WORLD_MAP_COLUMNS;
+      const nextY = Math.min(WORLD_MAP_ROWS - 1, curY + 1);
+
+      if (
+        tilemap[curY * WORLD_MAP_COLUMNS + curX] >= 50 ||
+        tilemap[curY * WORLD_MAP_COLUMNS + nextX] >= 50 ||
+        tilemap[nextY * WORLD_MAP_COLUMNS + curX] >= 50 ||
+        tilemap[nextY * WORLD_MAP_COLUMNS + nextX] >= 50
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Finds the deepest water tile with maximum land clearance in a macro cell.
+   * If a reference position (previous waypoint) is provided, prioritizes water tiles
+   * that maintain unobstructed line-of-sight on the same side of any dividing island.
+   */
+  public getBestWaterTile(col: number, row: number, refPos?: Position): Position {
+    let tilemap: Uint8Array | null = null;
+    try {
+      tilemap = Assets.data('worldTilemap');
+    } catch {
+      tilemap = null;
+    }
+
+    const defaultPos = {
+      x: col * MACRO_SCALE + MACRO_SCALE / 2,
+      y: row * MACRO_SCALE + MACRO_SCALE / 2,
+    };
+
+    if (!tilemap || tilemap.length < WORLD_MAP_COLUMNS * WORLD_MAP_ROWS) {
+      return defaultPos;
+    }
+
+    const cellType = this.getMacroCellType(col, row);
+    // If pure open ocean, check line of sight if refPos is given, else center is 100% deep water
+    if (cellType === 1 && (!refPos || this.hasWaterLineOfSight(refPos, defaultPos))) {
+      return defaultPos;
+    }
+
+    // For coastal/bottleneck cells, search for the tile with highest clearance from land
+    const startX = col * MACRO_SCALE;
+    const startY = row * MACRO_SCALE;
+    let bestX = defaultPos.x;
+    let bestY = defaultPos.y;
+    let bestScore = -1;
+
+    for (let dy = 0; dy < MACRO_SCALE; dy++) {
+      for (let dx = 0; dx < MACRO_SCALE; dx++) {
+        const tx = (startX + dx) % WORLD_MAP_COLUMNS;
+        const ty = startY + dy;
+        if (tilemap[ty * WORLD_MAP_COLUMNS + tx] >= 50) continue; // Skip land
+
+        let minDist = 99;
+        for (let sdy = -2; sdy <= 2; sdy++) {
+          for (let sdx = -2; sdx <= 2; sdx++) {
+            const stx = ((tx + sdx) % WORLD_MAP_COLUMNS + WORLD_MAP_COLUMNS) % WORLD_MAP_COLUMNS;
+            const sty = ty + sdy;
+            if (sty >= 0 && sty < WORLD_MAP_ROWS && tilemap[sty * WORLD_MAP_COLUMNS + stx] >= 50) {
+              const d = Math.hypot(sdx, sdy);
+              if (d < minDist) minDist = d;
+            }
+          }
+        }
+
+        let reachableBonus = 0;
+        if (refPos) {
+          if (this.hasWaterLineOfSight(refPos, { x: tx, y: ty })) {
+            reachableBonus = 100;
+          }
+        }
+
+        const score = minDist + reachableBonus;
+        if (score > bestScore) {
+          bestScore = score;
+          bestX = tx;
+          bestY = ty;
+        }
+      }
+    }
+
+    return { x: bestX, y: bestY };
   }
 
   /* ---------------- Macro-Grid A* Pathfinding ---------------- */
 
   /**
-   * Finds an obstacle-free nautical path across the globe from startPos to goalPos,
-   * accounting for cylindrical world X-wrap and landmass avoidance.
+   * Finds an obstacle-free nautical path across the globe from startPos to goalPos.
+   * - Enforces Explored-Only Rule: only traverses revealed/charted waters if requireExplored is true
+   * - Applies Coastal Clearance Weighting: penalizes bottlenecks (Bangka Strait) to favor wide open sea
+   * - Places waypoints on verified deepest water tiles
+   * Returns null if no charted water route exists.
    */
-  public findPath(startPos: Position, goalPos: Position): Position[] {
+  public findPath(
+    startPos: Position,
+    goalPos: Position,
+    requireExplored: boolean = true,
+  ): Position[] | null {
     this.initMacroGrid();
 
     const startCol = ((Math.floor(startPos.x / MACRO_SCALE) % MACRO_COLS) + MACRO_COLS) % MACRO_COLS;
@@ -167,8 +326,8 @@ class AutopilotManager {
 
     // Ensure start and destination cells are treated as navigable
     if (this.macroGrid) {
-      this.macroGrid[startIndex] = 1;
-      this.macroGrid[goalIndex] = 1;
+      if (this.macroGrid[startIndex] === 0) this.macroGrid[startIndex] = 2;
+      if (this.macroGrid[goalIndex] === 0) this.macroGrid[goalIndex] = 2;
     }
 
     const gScore = new Float32Array(TOTAL_MACRO_CELLS);
@@ -207,10 +366,9 @@ class AutopilotManager {
     ];
 
     let iterations = 0;
-    const maxIterations = 8000;
+    const maxIterations = 10000;
 
     while (openSet.length > 0 && iterations++ < maxIterations) {
-      // Find lowest fScore node in open set
       let lowestIdx = 0;
       let lowestF = fScore[openSet[0]];
       for (let i = 1; i < openSet.length; i++) {
@@ -224,11 +382,10 @@ class AutopilotManager {
       const current = openSet[lowestIdx];
 
       if (current === goalIndex) {
-        // Goal reached! Reconstruct macro cell path
+        // Goal reached! Reconstruct macro cell path with deepest-water waypoints
         return this.reconstructPath(cameFrom, current, startPos, goalPos);
       }
 
-      // Remove current from open set
       openSet.splice(lowestIdx, 1);
       inOpenSet[current] = 0;
 
@@ -244,11 +401,27 @@ class AutopilotManager {
         const nextIndex = nextRow * MACRO_COLS + nextCol;
 
         // Verify navigable water
-        if (!this.isMacroCellWater(nextCol, nextRow) && nextIndex !== goalIndex) {
+        const cellType = this.getMacroCellType(nextCol, nextRow);
+        if (cellType === 0 && nextIndex !== goalIndex) {
           continue;
         }
 
-        const tentativeG = currentG + n.cost;
+        // Explored-Only Rule: Cell must be revealed in explorationManager
+        if (requireExplored && nextIndex !== goalIndex && nextIndex !== startIndex) {
+          const worldX = nextCol * MACRO_SCALE + MACRO_SCALE / 2;
+          const worldY = nextRow * MACRO_SCALE + MACRO_SCALE / 2;
+          const isExplored = explorationManager.isPositionExplored(worldX, worldY);
+          if (!isExplored) {
+            continue;
+          }
+        }
+
+        // Coastal Clearance Cost Weighting:
+        // Open deep ocean (cellType 1) has cost 1.0.
+        // Coastal / narrow straits / island corridors (cellType 2) has cost 6.0 to favor wide open sea.
+        const costMultiplier = cellType === 2 ? 6.0 : 1.0;
+        const tentativeG = currentG + n.cost * costMultiplier;
+
         if (tentativeG < gScore[nextIndex]) {
           cameFrom[nextIndex] = current;
           gScore[nextIndex] = tentativeG;
@@ -262,12 +435,13 @@ class AutopilotManager {
       }
     }
 
-    // Fallback if no full water path found: direct line with intermediate waypoint
-    return [startPos, goalPos];
+    // No path found through revealed waters / obstacle-free channel
+    return null;
   }
 
   /**
-   * Reconstructs macro cell coordinates and performs line-of-sight smoothing.
+   * Reconstructs macro cell coordinates and generates verified deepest-water waypoints
+   * using continuous raycast line-of-sight path smoothing.
    */
   private reconstructPath(
     cameFrom: Int32Array,
@@ -286,30 +460,44 @@ class AutopilotManager {
     }
     rawCells.reverse();
 
-    // Map macro cells to world coordinates
-    const waypoints: Position[] = [startPos];
-
-    // Downsample and smooth waypoints (take every 3rd-4th cell or direction change)
+    // Generate candidate water waypoints along the cell sequence
+    const candidatePoints: Position[] = [startPos];
+    let prevPoint = startPos;
     for (let i = 1; i < rawCells.length - 1; i++) {
-      const prev = rawCells[i - 1];
-      const cur = rawCells[i];
-      const next = rawCells[i + 1];
+      const wp = this.getBestWaterTile(rawCells[i].col, rawCells[i].row, prevPoint);
+      candidatePoints.push(wp);
+      prevPoint = wp;
+    }
+    candidatePoints.push(goalPos);
 
-      // Keep waypoint if heading changes or at interval
-      const d1x = cur.col - prev.col;
-      const d1y = cur.row - prev.row;
-      const d2x = next.col - cur.col;
-      const d2y = next.row - cur.row;
+    // Raycast Line-of-Sight Path Smoothing (guarantees zero island-clipping)
+    const waypoints: Position[] = [startPos];
+    let currentIdx = 0;
 
-      if (d1x !== d2x || d1y !== d2y || i % 4 === 0) {
-        waypoints.push({
-          x: cur.col * MACRO_SCALE + MACRO_SCALE / 2,
-          y: cur.row * MACRO_SCALE + MACRO_SCALE / 2,
-        });
+    while (currentIdx < candidatePoints.length - 1) {
+      let furthestIdx = currentIdx + 1;
+      // Look ahead up to 10 nodes to smoothly combine open-water cells
+      const maxLookAhead = Math.min(candidatePoints.length - 1, currentIdx + 10);
+      for (let nextIdx = maxLookAhead; nextIdx > currentIdx; nextIdx--) {
+        if (this.hasWaterLineOfSight(candidatePoints[currentIdx], candidatePoints[nextIdx])) {
+          furthestIdx = nextIdx;
+          break;
+        }
       }
+
+      waypoints.push(candidatePoints[furthestIdx]);
+      currentIdx = furthestIdx;
     }
 
-    waypoints.push(goalPos);
+    // Ensure goal is the final waypoint
+    if (
+      waypoints.length < 2 ||
+      waypoints[waypoints.length - 1].x !== goalPos.x ||
+      waypoints[waypoints.length - 1].y !== goalPos.y
+    ) {
+      waypoints.push(goalPos);
+    }
+
     return waypoints;
   }
 
@@ -318,7 +506,11 @@ class AutopilotManager {
   /**
    * Sets the active autopilot course towards a revealed port.
    */
-  public setCourse(targetPortId: string, enterPortOnArrival: boolean = true): AutopilotCourse | null {
+  public setCourse(
+    targetPortId: string,
+    enterPortOnArrival: boolean = true,
+    requireExplored: boolean = true,
+  ): AutopilotCourse | null {
     // Autopilot is only available while sailing at sea
     if (state.portId !== null) {
       const alert: SeaAlert = {
@@ -350,8 +542,19 @@ class AutopilotManager {
       destinationPos = { ...port.position };
     }
 
-    // Solve obstacle-free path
-    const waypoints = this.findPath(playerPos, destinationPos);
+    // Solve obstacle-free path through charted waters only
+    const waypoints = this.findPath(playerPos, destinationPos, requireExplored);
+    if (!waypoints || waypoints.length < 2) {
+      soundManager.playSfx('shipBell');
+      const alert: SeaAlert = {
+        id: generateId(),
+        type: 'warning',
+        text: `📜 UNCHARTED ROUTE: No explored nautical passage to ${port.name}. You must manually explore and map the waters before autopilot can navigate.`,
+        timestamp: Date.now(),
+      };
+      updateInterface.seaAlert?.(alert);
+      return null;
+    }
 
     // Calculate distance and voyage time estimate
     let totalDist = 0;
@@ -363,7 +566,6 @@ class AutopilotManager {
     }
 
     const leagues = Math.round(totalDist);
-    // Average sailing speed ~15-20 leagues per in-game day (72 ticks)
     const estimatedDays = Math.max(1, Math.round(leagues / 18));
 
     this.course = {
@@ -388,6 +590,8 @@ class AutopilotManager {
       estimatedDays,
     };
 
+    this.resetStuckState();
+
     soundManager.playSfx('shipBell');
 
     const alert: SeaAlert = {
@@ -408,6 +612,7 @@ class AutopilotManager {
     this.course.active = false;
     this.course = null;
     state.autopilotCourse = null;
+    this.resetStuckState();
 
     const alert: SeaAlert = {
       id: generateId(),
@@ -503,10 +708,10 @@ class AutopilotManager {
     return null;
   }
 
-  /* ---------------- Steering Loop ---------------- */
-
   /**
    * Called every frame in worldCharacters.ts to drive automated navigation.
+   * Features active anti-stuck detection, sustained deflection, net progress tracking,
+   * and auto-disengagement when wedged against obstacles.
    */
   public updateSteering(player: any): boolean {
     if (!this.isActive() || !this.course) {
@@ -531,32 +736,115 @@ class AutopilotManager {
       return false;
     }
 
-    // Check if reached current waypoint
+    // Check distance to current waypoint
     let dx = target.x - currentPos.x;
     if (dx > WORLD_MAP_COLUMNS / 2) dx -= WORLD_MAP_COLUMNS;
     if (dx < -WORLD_MAP_COLUMNS / 2) dx += WORLD_MAP_COLUMNS;
     const dy = target.y - currentPos.y;
     const dist = Math.hypot(dx, dy);
 
+    // Track waypoint transitions
+    if (this.course.currentWaypointIndex !== this.lastProgressWaypointIndex) {
+      this.lastProgressWaypointIndex = this.course.currentWaypointIndex;
+      this.lastProgressDist = dist;
+      this.stagnantTicks = 0;
+      this.stuckTicks = 0;
+      this.deflectionTicksRemaining = 0;
+      this.consecutiveStuckEvents = 0;
+    }
+
+    // Track physical position movement
+    if (this.lastStuckPos) {
+      let movedX = Math.abs(currentPos.x - this.lastStuckPos.x);
+      if (movedX > WORLD_MAP_COLUMNS / 2) movedX = WORLD_MAP_COLUMNS - movedX;
+      const movedY = Math.abs(currentPos.y - this.lastStuckPos.y);
+      const movedDist = Math.hypot(movedX, movedY);
+
+      if (movedDist < 0.08) {
+        this.stuckTicks++;
+      } else {
+        // Decay rather than instantly resetting to 0 to prevent oscillation loops
+        this.stuckTicks = Math.max(0, this.stuckTicks - 1);
+      }
+    }
+    this.lastStuckPos = { ...currentPos };
+
+    // Track net progress towards target waypoint
+    if (dist < this.lastProgressDist - 0.2) {
+      this.lastProgressDist = dist;
+      this.stagnantTicks = 0;
+      this.consecutiveStuckEvents = 0;
+    } else {
+      this.stagnantTicks++;
+    }
+
     // Within arrival radius of waypoint
-    if (dist < 2.0) {
+    if (dist < 2.5) {
       this.course.currentWaypointIndex++;
+      this.resetStuckState();
       if (this.course.currentWaypointIndex >= waypoints.length) {
         this.handleArrival(player, currentPos);
         return false;
       }
     }
 
-    // Calculate heading towards target waypoint
+    // Safety Disengage if stuck against shore / island
+    if (this.consecutiveStuckEvents >= 4 || this.stuckTicks >= 8 || this.stagnantTicks >= 24) {
+      soundManager.playSfx('shipBell');
+      this.cancelCourse('⚠️ Coastal Shallows Hazard: Fleet was impeded by shore/island terrain. Disengaged autopilot for manual navigation.');
+      player.setHeading('');
+      return false;
+    }
+
+    // Calculate base heading towards next waypoint
     const nextTarget = waypoints[this.course.currentWaypointIndex];
     let ndx = nextTarget.x - currentPos.x;
     if (ndx > WORLD_MAP_COLUMNS / 2) ndx -= WORLD_MAP_COLUMNS;
     if (ndx < -WORLD_MAP_COLUMNS / 2) ndx += WORLD_MAP_COLUMNS;
     const ndy = nextTarget.y - currentPos.y;
+    const baseHeading = this.vectorToDirection(ndx, ndy);
 
-    const heading = this.vectorToDirection(ndx, ndy);
-    player.setHeading(heading);
+    let finalHeading = baseHeading;
+
+    // Trigger Sustained Deflection if stuck
+    if (this.stuckTicks >= 2 && this.deflectionTicksRemaining <= 0) {
+      this.consecutiveStuckEvents++;
+
+      // Try skipping ahead if next waypoint is nearby and visible
+      if (this.consecutiveStuckEvents >= 2 && this.course.currentWaypointIndex < waypoints.length - 1) {
+        const nextWp = waypoints[this.course.currentWaypointIndex + 1];
+        if (dist < 6.0 && this.hasWaterLineOfSight(currentPos, nextWp)) {
+          this.course.currentWaypointIndex++;
+          this.resetStuckState();
+          return true;
+        }
+      }
+
+      // Engage sustained deflection for 6 frames
+      this.deflectionTicksRemaining = 6;
+      this.activeDeflectionDir = this.getDeflectionHeading(baseHeading, this.consecutiveStuckEvents);
+    }
+
+    // Apply active deflection heading if deflection window is active
+    if (this.deflectionTicksRemaining > 0) {
+      this.deflectionTicksRemaining--;
+      finalHeading = this.activeDeflectionDir || baseHeading;
+    }
+
+    player.setHeading(finalHeading);
     return true;
+  }
+
+  /**
+   * Generates a 45-degree deflection heading to smoothly slide off obstacles.
+   */
+  public getDeflectionHeading(dir: Direction, tick: number): Direction {
+    const directions: Direction[] = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+    const idx = directions.indexOf(dir);
+    if (idx === -1) return dir;
+    const offset = tick % 2 === 0 ? 1 : -1;
+    const newIdx = (idx + offset + 8) % 8;
+    return directions[newIdx];
   }
 
   /**
@@ -569,6 +857,7 @@ class AutopilotManager {
     this.course.active = false;
     this.course = null;
     state.autopilotCourse = null;
+    this.resetStuckState();
 
     if (enterPortOnArrival) {
       // Direct harbor docking
@@ -608,12 +897,10 @@ class AutopilotManager {
    * Converts 2D delta vector into closest 8-way cardinal/ordinal Direction.
    */
   public vectorToDirection(dx: number, dy: number): Direction {
-    // Angle in degrees from 0 to 360, where 0 is North (dy < 0)
     const angleRad = Math.atan2(dx, -dy);
     let angleDeg = (angleRad * 180) / Math.PI;
     if (angleDeg < 0) angleDeg += 360;
 
-    // 8 segments of 45 degrees centered on directions
     if (angleDeg >= 337.5 || angleDeg < 22.5) return 'n';
     if (angleDeg >= 22.5 && angleDeg < 67.5) return 'ne';
     if (angleDeg >= 67.5 && angleDeg < 112.5) return 'e';

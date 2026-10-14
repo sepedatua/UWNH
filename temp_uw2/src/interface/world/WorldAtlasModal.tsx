@@ -10,6 +10,7 @@ import { regularPorts, supplyPorts } from '../../data/portData';
 import { discoveries } from '../../data/discoveryData';
 import { XMarkIcon, EyeIcon } from '@heroicons/react/24/solid';
 import autopilotManager, { AutopilotCourse } from '../../game/world/autopilotManager';
+import { positionAdjacentToPort } from '../../state/selectors';
 
 interface Props {
   isOpen: boolean;
@@ -48,6 +49,35 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
 
   const playerFleet = state.fleets[1] || state.fleets['1'];
   const playerPos = playerFleet?.position || { x: 840, y: 358 };
+
+  // Calculate destination coordinate and prospective charted route
+  const destinationPos = useMemo(() => {
+    if (!selectedPortForCourse) return null;
+    try {
+      return positionAdjacentToPort(selectedPortForCourse.id);
+    } catch {
+      return { ...selectedPortForCourse.position };
+    }
+  }, [selectedPortForCourse]);
+
+  const courseRoute = useMemo(() => {
+    if (!selectedPortForCourse || !destinationPos) return null;
+    return autopilotManager.findPath(playerPos, destinationPos, true);
+  }, [selectedPortForCourse, destinationPos, playerPos]);
+
+  const isRouteCharted = Boolean(courseRoute && courseRoute.length >= 2);
+
+  const routeDist = useMemo(() => {
+    if (!courseRoute || courseRoute.length < 2) return null;
+    let dist = 0;
+    for (let i = 0; i < courseRoute.length - 1; i++) {
+      let dx = Math.abs(courseRoute[i + 1].x - courseRoute[i].x);
+      if (dx > 1080) dx = 2160 - dx;
+      const dy = Math.abs(courseRoute[i + 1].y - courseRoute[i].y);
+      dist += Math.hypot(dx, dy);
+    }
+    return Math.round(dist);
+  }, [courseRoute]);
 
   // Helper: Clamp pan within canvas bounds
   const clampPan = useCallback((px: number, py: number, currentZoom: number) => {
@@ -259,17 +289,20 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
     ctx.arc(shipPx, shipPy, 8, 0, Math.PI * 2);
     ctx.stroke();
 
-    // 7. Render Plotted Autopilot Route if active
+    // 7. Render Plotted Autopilot Route (Active or Selected Preview)
     const activeRoute = autopilotManager.getPlottedRoute();
-    if (activeRoute && activeRoute.length > 1) {
+    const routeToDraw = selectedPortForCourse && courseRoute ? courseRoute : activeRoute;
+    const isPreview = Boolean(selectedPortForCourse && courseRoute);
+
+    if (routeToDraw && routeToDraw.length > 1) {
       ctx.save();
-      ctx.strokeStyle = '#f59e0b';
+      ctx.strokeStyle = isPreview ? '#38bdf8' : '#f59e0b';
       ctx.lineWidth = 2.0 / Math.sqrt(zoom);
       ctx.setLineDash([4, 4]);
 
-      for (let i = 0; i < activeRoute.length - 1; i++) {
-        const p1 = activeRoute[i];
-        const p2 = activeRoute[i + 1];
+      for (let i = 0; i < routeToDraw.length - 1; i++) {
+        const p1 = routeToDraw[i];
+        const p2 = routeToDraw[i + 1];
 
         // Cylindrical line drawing (skip if seam crossing)
         if (Math.abs(p1.x - p2.x) < 1080) {
@@ -287,7 +320,7 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
         // Draw waypoint node
         const wpX = (p2.x / 2160) * width;
         const wpY = (p2.y / 1080) * height;
-        ctx.fillStyle = '#fbbf24';
+        ctx.fillStyle = isPreview ? '#7dd3fc' : '#fbbf24';
         ctx.beginPath();
         ctx.arc(wpX, wpY, 2.5, 0, Math.PI * 2);
         ctx.fill();
@@ -296,7 +329,7 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
     }
 
     ctx.restore();
-  }, [isOpen, showPorts, showLandmarks, playerPos, sightBreakdown, activeCourse, zoom, panOffset]);
+  }, [isOpen, showPorts, showLandmarks, playerPos, sightBreakdown, activeCourse, zoom, panOffset, selectedPortForCourse, courseRoute]);
 
   const findNearbyPortAtCoords = (worldX: number, worldY: number) => {
     const allPorts = [
@@ -633,6 +666,19 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
                     </div>
                   )}
 
+                  {/* Warning if uncharted waters block passage */}
+                  {!isRouteCharted && !isDockedInPort && (
+                    <div className="bg-amber-950/90 border border-amber-600/70 p-2.5 rounded text-xs text-amber-200 flex items-start space-x-2 shadow-inner">
+                      <span className="text-base">📜</span>
+                      <div>
+                        <div className="font-bold text-yellow-300">Route Blocked by Uncharted Waters</div>
+                        <div className="text-[10px] text-amber-200/80">
+                          No charted sea passage connects your fleet to this port. You must explore the ocean manually (or acquire regional nautical charts) before autopilot can navigate.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="text-xs space-y-2 bg-[#1b140c] p-3 rounded border border-amber-800/40">
                     <div className="flex justify-between">
                       <span className="text-neutral-400">Classification:</span>
@@ -643,19 +689,17 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
                     <div className="flex justify-between">
                       <span className="text-neutral-400">Estimated Distance:</span>
                       <span className="font-semibold text-yellow-300">
-                        ~{Math.round(Math.hypot(
-                          Math.min(Math.abs(selectedPortForCourse.position.x - playerPos.x), 2160 - Math.abs(selectedPortForCourse.position.x - playerPos.x)),
-                          Math.abs(selectedPortForCourse.position.y - playerPos.y)
-                        ))} Nautical Leagues
+                        {routeDist !== null
+                          ? `~${routeDist} Nautical Leagues`
+                          : '⚠️ Uncharted Passage'}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-neutral-400">Estimated Passage:</span>
                       <span className="font-semibold text-yellow-300">
-                        ~{Math.max(1, Math.round(Math.hypot(
-                          Math.min(Math.abs(selectedPortForCourse.position.x - playerPos.x), 2160 - Math.abs(selectedPortForCourse.position.x - playerPos.x)),
-                          Math.abs(selectedPortForCourse.position.y - playerPos.y)
-                        ) / 18))} Sea Days
+                        {routeDist !== null
+                          ? `~${Math.max(1, Math.round(routeDist / 18))} Sea Days`
+                          : '⚠️ Uncharted Passage'}
                       </span>
                     </div>
                   </div>
@@ -709,20 +753,25 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
                     </button>
                     <button
                       type="button"
-                      disabled={isDockedInPort}
+                      disabled={isDockedInPort || !isRouteCharted}
                       onClick={() => {
-                        if (isDockedInPort) return;
-                        autopilotManager.setCourse(selectedPortForCourse.id, enterPortOnArrival);
+                        if (isDockedInPort || !isRouteCharted) return;
+                        autopilotManager.setCourse(selectedPortForCourse.id, enterPortOnArrival, true);
                         setSelectedPortForCourse(null);
                         onClose();
                       }}
                       className={`px-4 py-1.5 rounded font-bold text-xs shadow-lg transition-all ${
-                        isDockedInPort
+                        isDockedInPort || !isRouteCharted
                           ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-60'
                           : 'bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-black cursor-pointer'
                       }`}
                     >
-                      ⛵ {isDockedInPort ? 'Autopilot Unavailable in Port' : 'Engage Autopilot Course'}
+                      ⛵{' '}
+                      {isDockedInPort
+                        ? 'Autopilot Unavailable in Port'
+                        : !isRouteCharted
+                        ? 'Passage Uncharted'
+                        : 'Engage Autopilot Course'}
                     </button>
                   </div>
                 </div>

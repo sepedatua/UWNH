@@ -6,11 +6,34 @@ import autopilotManager, {
 } from './world/autopilotManager';
 import state from '../state/state';
 import seaWeather from './world/seaWeather';
+import explorationManager from './world/explorationManager';
+
+import fs from 'fs';
+import path from 'path';
+import Assets from '../assets';
+
+// Load worldTilemap binary so unit tests have full accurate geographical landmasses
+try {
+  const tilemapPath = path.resolve(__dirname, '../data/assets/worldTilemap.wasm');
+  if (fs.existsSync(tilemapPath)) {
+    const tilemapBuf = fs.readFileSync(tilemapPath);
+    (Assets as any).data = (id: string) => {
+      if (id === 'worldTilemap') return new Uint8Array(tilemapBuf);
+      return null;
+    };
+  }
+} catch (e) {}
 
 describe('Milestone 10: Port Autopilot Navigation & Maritime Course Plotting', () => {
   beforeEach(() => {
+    autopilotManager.resetGrid();
     autopilotManager.cancelCourse();
     seaWeather.clearWeather();
+    explorationManager.reset();
+    // Default: reveal European charts for standard baseline tests
+    explorationManager.unlockRegionalChart('mediterranean');
+    explorationManager.unlockRegionalChart('north_europe');
+
     state.timePassed = 480;
     state.portId = null;
     state.fleets = {
@@ -48,10 +71,11 @@ describe('Milestone 10: Port Autopilot Navigation & Maritime Course Plotting', (
       const start = { x: 840, y: 358 }; // Lisbon
       const destination = { x: 860, y: 300 }; // Bay of Biscay
 
-      const waypoints = autopilotManager.findPath(start, destination);
-      expect(waypoints.length).toBeGreaterThanOrEqual(2);
-      expect(waypoints[0]).toEqual(start);
-      expect(waypoints[waypoints.length - 1]).toEqual(destination);
+      const waypoints = autopilotManager.findPath(start, destination, false);
+      expect(waypoints).not.toBeNull();
+      expect(waypoints!.length).toBeGreaterThanOrEqual(2);
+      expect(waypoints![0]).toEqual(start);
+      expect(waypoints![waypoints!.length - 1]).toEqual(destination);
     });
 
     it('supports cylindrical X-axis wrap-around across Pacific seams', () => {
@@ -59,10 +83,11 @@ describe('Milestone 10: Port Autopilot Navigation & Maritime Course Plotting', (
       const westSeam = { x: 2150, y: 500 };
       const eastSeam = { x: 10, y: 500 };
 
-      const waypoints = autopilotManager.findPath(westSeam, eastSeam);
-      expect(waypoints.length).toBeGreaterThanOrEqual(2);
-      expect(waypoints[0]).toEqual(westSeam);
-      expect(waypoints[waypoints.length - 1]).toEqual(eastSeam);
+      const waypoints = autopilotManager.findPath(westSeam, eastSeam, false);
+      expect(waypoints).not.toBeNull();
+      expect(waypoints!.length).toBeGreaterThanOrEqual(2);
+      expect(waypoints![0]).toEqual(westSeam);
+      expect(waypoints![waypoints!.length - 1]).toEqual(eastSeam);
     });
 
     it('converts delta vectors to accurate 8-way directional headings', () => {
@@ -190,6 +215,143 @@ describe('Milestone 10: Port Autopilot Navigation & Maritime Course Plotting', (
       expect(movedAfterInterrupt).toBe(false);
       expect(autopilotManager.isActive()).toBe(false);
       expect(currentHeading).toBe('');
+    });
+  });
+
+  describe('Task 10.6: Coastal Clearance & Explored-Only Pathfinding Rule', () => {
+    it('rejects course engagement through unrevealed Fog of War waters', () => {
+      // Fleet at Lisbon (charted), but Caribbean is completely unrevealed
+      const sanJuanPos = { x: 480, y: 440 };
+      const unrevealedPath = autopilotManager.findPath(
+        { x: 840, y: 358 },
+        sanJuanPos,
+        true, // Require explored waters
+      );
+
+      // Must return null because Atlantic/Caribbean waters are uncharted!
+      expect(unrevealedPath).toBeNull();
+    });
+
+    it('allows navigation after purchasing regional cartography charts', () => {
+      // Reveal Far East charts
+      explorationManager.unlockRegionalChart('far_east');
+
+      const sundaPos = { x: 1540, y: 666 };
+      const malaccaPos = { x: 1506, y: 606 };
+
+      const chartedPath = autopilotManager.findPath(sundaPos, malaccaPos, true);
+      expect(chartedPath).not.toBeNull();
+      expect(chartedPath!.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('avoids narrow coastal bottlenecks (Bangka Strait) and favors wide open sea', () => {
+      explorationManager.unlockRegionalChart('far_east');
+
+      const sundaPos = { x: 1540, y: 666 };
+      const malaccaPos = { x: 1506, y: 606 };
+
+      const path = autopilotManager.findPath(sundaPos, malaccaPos, true);
+      expect(path).not.toBeNull();
+      console.log('--- SUNDA TO MALACCA PATH ---');
+      path!.forEach((wp, idx) => {
+        console.log(`WP ${idx}: x=${wp.x}, y=${wp.y} (col=${Math.floor(wp.x/10)}, row=${Math.floor(wp.y/10)})`);
+      });
+
+      // Cell (152, 63) is the narrow Bangka Strait bottleneck where ships get pinned against Sumatra.
+      // With coastal clearance cost weighting (4.5), waypoints must route east of Bangka (col >= 153/154).
+      const usesNarrowBangkaBottleneck = path!.some(
+        (wp) => Math.floor(wp.x / 10) === 152 && Math.floor(wp.y / 10) === 63,
+      );
+      expect(usesNarrowBangkaBottleneck).toBe(false);
+    });
+
+    it('detects coastal obstruction and triggers deflection steering', () => {
+      let currentHeading = '';
+      const stationaryPos = { x: 840, y: 358 };
+      const mockPlayer = {
+        position: () => stationaryPos, // Fleet is blocked by shore and cannot move
+        setHeading: (h: string) => {
+          currentHeading = h;
+        },
+      };
+
+      autopilotManager.setCourse('2', true);
+
+      // Tick 1: normal heading
+      autopilotManager.updateSteering(mockPlayer);
+      const initialHeading = currentHeading;
+
+      // Tick 2-3: no position change detected -> deflection steering kicks in
+      autopilotManager.updateSteering(mockPlayer);
+      autopilotManager.updateSteering(mockPlayer);
+      expect(currentHeading).not.toBe('');
+
+      // Continuous obstruction triggers auto-disengage for safety
+      for (let i = 0; i < 7; i++) {
+        autopilotManager.updateSteering(mockPlayer);
+      }
+      expect(autopilotManager.isActive()).toBe(false);
+      expect(currentHeading).toBe('');
+    });
+
+    it('prevents island clipping via continuous raycast line-of-sight path smoothing', () => {
+      // Mentawai Island at (1483, 635):
+      // A direct line between (1480, 640) and (1487, 630) crosses land
+      const lineCrossesIsland = autopilotManager.hasWaterLineOfSight(
+        { x: 1480, y: 640 },
+        { x: 1487, y: 630 },
+      );
+      expect(lineCrossesIsland).toBe(false);
+
+      // Deep open ocean has unobstructed line of sight
+      const openOceanClear = autopilotManager.hasWaterLineOfSight(
+        { x: 1460, y: 640 },
+        { x: 1460, y: 620 },
+      );
+      expect(openOceanClear).toBe(true);
+
+      // When planning a path along west Sumatra, every segment must have water line-of-sight
+      const path = autopilotManager.findPath(
+        { x: 1480, y: 650 },
+        { x: 1460, y: 610 },
+        false,
+      );
+      expect(path).not.toBeNull();
+      for (let i = 0; i < path!.length - 1; i++) {
+        const segClear = autopilotManager.hasWaterLineOfSight(path![i], path![i + 1]);
+        expect(segClear).toBe(true);
+      }
+    });
+
+    it('sustains deflection heading across multiple ticks to escape coastal entrapment', () => {
+      let headings: string[] = [];
+      let playerPos = { x: 840, y: 358 };
+      const mockPlayer = {
+        position: () => playerPos,
+        setHeading: (h: string) => {
+          headings.push(h);
+        },
+      };
+
+      autopilotManager.setCourse('2', true);
+      headings = [];
+
+      // Frame 1: sets initial position
+      autopilotManager.updateSteering(mockPlayer);
+      // Frame 2: detects zero movement (stuckTick 1)
+      autopilotManager.updateSteering(mockPlayer);
+      // Frame 3: detects zero movement (stuckTick 2) -> triggers deflection
+      autopilotManager.updateSteering(mockPlayer);
+
+      const deflectionHeading = headings[headings.length - 1];
+
+      // Simulate a small slide along the shore (0.06 tiles) that previously caused instant oscillation
+      playerPos = { x: 840.06, y: 358 };
+      autopilotManager.updateSteering(mockPlayer);
+
+      // Deflection MUST be sustained for multiple ticks and not immediately snap back to base heading
+      const nextHeading = headings[headings.length - 1];
+      expect(nextHeading).toBe(deflectionHeading);
     });
   });
 });
