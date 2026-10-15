@@ -27,10 +27,15 @@ const randomDirection = (direction: number) => {
 };
 
 export const getWind = (seaArea: number, isSummer: boolean) => {
+  const data = Assets.data('windsCurrent');
+  if (!data) {
+    return { direction: 0, speed: 2 };
+  }
+
   const baseDirection =
-    Assets.data('windsCurrent')[isSummer ? seaArea : seaArea + 900];
+    data[isSummer ? seaArea : seaArea + 900];
   const baseSpeed =
-    Assets.data('windsCurrent')[isSummer ? seaArea + 450 : seaArea + 1350];
+    data[isSummer ? seaArea + 450 : seaArea + 1350];
 
   return {
     direction: randomDirection(baseDirection),
@@ -46,7 +51,14 @@ export const getIsSummer = (startDate: Date, timePassed: number) => {
   return currentMonth >= 3 && currentMonth < 9;
 };
 
-export const getCurrent = (seaArea: number) => ({
-  direction: Assets.data('windsCurrent')[seaArea + 1800],
-  speed: Assets.data('windsCurrent')[seaArea + 2250],
-});
+export const getCurrent = (seaArea: number) => {
+  const data = Assets.data('windsCurrent');
+  if (!data) {
+    return { direction: 0, speed: 0 };
+  }
+
+  return {
+    direction: data[seaArea + 1800],
+    speed: data[seaArea + 2250],
+  };
+};

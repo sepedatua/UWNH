@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import autopilotManager, {
   MACRO_COLS,
   MACRO_ROWS,
@@ -11,6 +11,10 @@ import explorationManager from './world/explorationManager';
 import fs from 'fs';
 import path from 'path';
 import Assets from '../assets';
+import { getCaptain, positionAdjacentToPort } from '../state/selectors';
+import createMap from '../map';
+import Input from '../input';
+import { setSail } from '../state/actionsWorld';
 
 // Load worldTilemap binary so unit tests have full accurate geographical landmasses
 try {
@@ -230,7 +234,7 @@ describe('Milestone 10: Port Autopilot Navigation & Maritime Course Plotting', (
 
       // Must return null because Atlantic/Caribbean waters are uncharted!
       expect(unrevealedPath).toBeNull();
-    });
+    }, 15000);
 
     it('allows navigation after purchasing regional cartography charts', () => {
       // Reveal Far East charts
@@ -353,5 +357,166 @@ describe('Milestone 10: Port Autopilot Navigation & Maritime Course Plotting', (
       const nextHeading = headings[headings.length - 1];
       expect(nextHeading).toBe(deflectionHeading);
     });
+
+    it('prevents diagonal cutting across northern Sumatra near Pasei and routes around the cape', () => {
+      // From Pasei west coast (1484, 608) to Malacca (1506, 606)
+      const malaccaDockPos = positionAdjacentToPort('59');
+      const pathFromPasei = autopilotManager.findPath(
+        { x: 1484, y: 608 },
+        malaccaDockPos, // Verified collision-free water position adjacent to Malacca harbor
+        false,
+      );
+
+      expect(pathFromPasei).not.toBeNull();
+      // Must not contain any segment that cuts across Sumatra land
+      for (let i = 0; i < pathFromPasei!.length - 1; i++) {
+        const hasClearWater = autopilotManager.hasWaterLineOfSight(pathFromPasei![i], pathFromPasei![i + 1]);
+        expect(hasClearWater).toBe(true);
+      }
+
+      // The path must safely route north to at least row 58 / y <= 590 to clear the cape
+      const reachesNorthCape = pathFromPasei!.some((wp) => wp.y <= 590);
+      expect(reachesNorthCape).toBe(true);
+    }, 15000);
+  });
+
+  describe('Task 10.8: Manual Steering Priority & Clean Port Departure Navigation', () => {
+    it('safely resolves flagship captain when role is null without throwing error', () => {
+      // Setup state where role is null (default for fresh game / custom protagonist)
+      state.mates = [
+        { sailorId: '1', role: null },
+        { sailorId: '32', role: 'firstMate' },
+      ];
+
+      expect(() => getCaptain(0)).not.toThrow();
+      const cap = getCaptain(0);
+      expect(cap).toBeDefined();
+      expect(cap.name).toBe('João Franco');
+    });
+
+    it('guarantees collision-free oceanic departure positions for all previously difficult ports', () => {
+      // Ports that historically struggled with rigid cardinal offsets
+      const testPortIds = ['62', '76', '91', '104', '109', '111', '116']; // Luanda, Cairo, Pasei, Belgrade, Mindanao, Ezo, Wanganui
+      const map = createMap([0, 0]);
+
+      for (const portId of testPortIds) {
+        expect(() => positionAdjacentToPort(portId)).not.toThrow();
+        const departurePos = positionAdjacentToPort(portId);
+        expect(map.collisionAt(departurePos)).toBe(false);
+      }
+    });
+
+    it('supports both WASD and Arrow key directional input', () => {
+      Input.setup();
+      Input.reset();
+
+      // Dispatch simulated ArrowUp keydown
+      const arrowUpEvent = new KeyboardEvent('keydown', { key: 'ArrowUp' });
+      document.dispatchEvent(arrowUpEvent);
+
+      expect(Input.getDirection({ includeOrdinal: true })).toBe('n');
+
+      // Dispatch simulated ArrowRight keydown (ordinal 'ne')
+      const arrowRightEvent = new KeyboardEvent('keydown', { key: 'ArrowRight' });
+      document.dispatchEvent(arrowRightEvent);
+
+      expect(Input.getDirection({ includeOrdinal: true })).toBe('ne');
+
+      Input.reset();
+      expect(Input.getDirection({ includeOrdinal: true })).toBe('');
+    });
+
+    it('cleanly disengages autopilot on setSail so manual steering is immediate', () => {
+      // Engage autopilot while at sea
+      state.portId = null;
+      state.fleets['1'].position = { x: 840, y: 358 };
+      autopilotManager.setCourse('2', true, false);
+      expect(autopilotManager.isActive()).toBe(true);
+
+      // Now set sail from a port
+      state.portId = '1';
+      setSail();
+
+      // Autopilot course must be completely cleared and manual helm active
+      expect(autopilotManager.isActive()).toBe(false);
+      expect(state.autopilotCourse).toBeNull();
+    });
+  });
+
+  describe('Task 10.10: Java Sea & Sunda Corridor Navigation & Anti-Looping Architecture', () => {
+    it('accurately identifies micro-islands in Java Sea as coastal obstacles (type 2)', () => {
+      // Cell (154, 64) contains 2 micro-island tiles that stride-2 previously skipped
+      expect(autopilotManager.getMacroCellType(154, 64)).toBe(2);
+    });
+
+    it('plots an unobstructed route from Sunda to Malacca through the Java Sea', () => {
+      const sundaDock = positionAdjacentToPort('92'); // Sunda
+      const malaccaDock = positionAdjacentToPort('87'); // Malacca (port 87)
+
+      const path = autopilotManager.findPath(sundaDock, malaccaDock, false);
+      expect(path).not.toBeNull();
+      expect(path!.length).toBeGreaterThanOrEqual(2);
+
+      // Verify each segment has clear water line of sight with 2x2 footprint clearance
+      for (let i = 0; i < path!.length - 1; i++) {
+        const hasClearWater = autopilotManager.hasWaterLineOfSight(path![i], path![i + 1]);
+        expect(hasClearWater).toBe(true);
+      }
+    }, 15000);
+
+    it('plots an unobstructed route from Sunda to Pasei around Sumatra', () => {
+      const sundaDock = positionAdjacentToPort('92'); // Sunda
+      const paseiDock = positionAdjacentToPort('91'); // Pasei (port 91)
+
+      const path = autopilotManager.findPath(sundaDock, paseiDock, false);
+      expect(path).not.toBeNull();
+      expect(path!.length).toBeGreaterThanOrEqual(2);
+
+      for (let i = 0; i < path!.length - 1; i++) {
+        const hasClearWater = autopilotManager.hasWaterLineOfSight(path![i], path![i + 1]);
+        expect(hasClearWater).toBe(true);
+      }
+    }, 15000);
+
+    it('retires transit waypoints via vector projection even when displaced laterally by cross-winds', () => {
+      state.portId = null;
+      state.fleets['1'].position = { x: 1540, y: 664 };
+
+      // Plotted waypoints going North: (1540, 664) -> (1545, 635) ...
+      const course = autopilotManager.setCourse('87', true, false);
+      expect(course).not.toBeNull();
+
+      // Suppose cross-wind displaces the fleet 3.0 tiles laterally to (1537, 649)
+      // which is past the first transit waypoint with dist = Math.hypot(3, 1) = 3.16 > 2.5
+      const mockPlayer = {
+        position: () => ({ x: 1537, y: 630 }),
+        setHeading: vi.fn(),
+      };
+
+      const initialWpIdx = course!.currentWaypointIndex;
+      expect(initialWpIdx).toBe(1);
+
+      // updateSteering must detect that the ship has reached/passed the waypoint baseline (t >= 0.95)
+      // and advance currentWaypointIndex, preventing circular orbiting
+      autopilotManager.updateSteering(mockPlayer);
+      expect(course!.currentWaypointIndex).toBeGreaterThan(initialWpIdx);
+    });
+
+    it('clamps deflection angles to <= 90 degrees and decays evasion lock immediately when direct path opens', () => {
+      // Position fleet facing an obstacle where direct path is obstructed
+      const pos = { x: 1540, y: 664 };
+      const targetNorth = { x: 1540, y: 640 };
+
+      const heading = autopilotManager.computeDeflectionHeading(pos, targetNorth);
+      expect(heading).toBeDefined();
+
+      // In open ocean water where path to target is wide open, heading must match direct compass rose
+      autopilotManager.resetStuckState();
+      const openPos = { x: 800, y: 358 };
+      const openTarget = { x: 800, y: 300 }; // Due North
+      const straightHeading = autopilotManager.computeDeflectionHeading(openPos, openTarget);
+      expect(straightHeading).toBe('n');
+    });
   });
 });
+

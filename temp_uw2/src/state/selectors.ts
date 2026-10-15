@@ -18,18 +18,30 @@ export const isDay = () => {
 
 export const shouldUpdateWorldStatus = () => state.timePassed % 240 === 0;
 
+export const VALID_DOCKING_OFFSETS = [
+  // Distance 2 cardinal (deltaX + deltaY = 2 <= 3) - Ideal harbor clearance
+  { x: 0, y: -2 }, { x: 2, y: 0 }, { x: 0, y: 2 }, { x: -2, y: 0 },
+  // Distance 3 knight-move (deltaX <= 2, deltaY <= 2, deltaX + deltaY = 3)
+  { x: 2, y: 1 }, { x: 1, y: 2 }, { x: -1, y: 2 }, { x: -2, y: 1 },
+  { x: -2, y: -1 }, { x: -1, y: -2 }, { x: 1, y: -2 }, { x: 2, y: -1 },
+  // Distance 1 cardinal & diagonal (deltaX <= 1, deltaY <= 1, deltaX + deltaY <= 2)
+  { x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 },
+  { x: 1, y: 1 }, { x: -1, y: 1 }, { x: -1, y: -1 }, { x: 1, y: -1 },
+];
+
 export const positionAdjacentToPort = (portId: string) => {
   const { position } = getPortData(portId);
   const map = createMap([0, 0]);
 
-  const offsetsToCheck = [
-    { x: 0, y: -2 },
-    { x: 2, y: 0 },
-    { x: 0, y: 2 },
-    { x: -2, y: 0 },
+  // Prioritize strictly dockable offsets (guaranteed to pass portAdjacentAt)
+  const fallbackRoadsteadOffsets = [
+    { x: 2, y: 2 }, { x: -2, y: 2 }, { x: -2, y: -2 }, { x: 2, y: -2 },
+    { x: 0, y: -3 }, { x: 3, y: 0 }, { x: 0, y: 3 }, { x: -3, y: 0 },
   ];
 
-  const positionNoCollision = offsetsToCheck
+  const allCandidateOffsets = [...VALID_DOCKING_OFFSETS, ...fallbackRoadsteadOffsets];
+
+  const positionNoCollision = allCandidateOffsets
     .map((offset) => applyPositionDelta(position, offset))
     .find((p) => !map.collisionAt(p));
 
@@ -116,9 +128,14 @@ export const getMates = () =>
   }));
 
 export const getCaptain = (shipI: number) => {
-  const mate = state.mates.find(({ role }) => role === shipI);
+  const mate =
+    state.mates.find(({ role }) => role === shipI) ||
+    (shipI === 0 && state.mates.length > 0 ? state.mates[0] : undefined);
 
   if (!mate) {
+    if (shipI === 0) {
+      return getSailor(state.protagonistId || '1');
+    }
     throw Error('No captain was found for the provided ship');
   }
 

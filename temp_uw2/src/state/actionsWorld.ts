@@ -23,6 +23,7 @@ import soundManager from '../interface/sound/soundManager';
 import seaWeather from '../game/world/seaWeather';
 import { calculateSightRadius } from '../game/world/fogOfWarRenderer';
 import explorationManager from '../game/world/explorationManager';
+import autopilotManager from '../game/world/autopilotManager';
 
 
 export const dock = (position: Position) => {
@@ -40,6 +41,10 @@ export const dock = (position: Position) => {
 
   // Save docked fleet position
   const playerFleet = state.fleets[1] || state.fleets['1'];
+
+  if (autopilotManager.isActive()) {
+    autopilotManager.cancelCourse('Autopilot Disengaged: Docked safely in harbor.');
+  }
 
   if (playerFleet) {
     playerFleet.position = position;
@@ -169,6 +174,10 @@ export const setDockedFleetPositions = () => {
 export const setSail = () => {
   const currentPortId = state.portId || '1';
   const playerFleet = state.fleets[1] || state.fleets['1'];
+
+  if (autopilotManager.isActive()) {
+    autopilotManager.cancelCourse('Autopilot Disengaged: Set sail on manual helm.');
+  }
 
   // Always compute valid oceanic departure tile right outside the port
   if (playerFleet) {

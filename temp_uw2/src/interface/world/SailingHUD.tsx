@@ -103,6 +103,9 @@ export default function SailingHUD() {
   }, [isAlive]);
 
   const handleDockClick = () => {
+    if (autopilotManager.isActive()) {
+      autopilotManager.cancelCourse('Autopilot Disengaged: Manual docking initiated.');
+    }
     const playerFleet = state.fleets[1] || state.fleets['1'];
     if (playerFleet?.position) {
       dock(playerFleet.position);

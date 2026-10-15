@@ -11,6 +11,7 @@ import updateInterface from '../../state/updateInterface';
 import { calculateDestination } from './worldUtils';
 import { getXWrapAround } from './sharedUtils';
 import { getCaptain } from '../../state/selectors';
+import getSailor from '../../data/sailorData';
 
 const createWorldPlayer = (
   startPosition: Position,
@@ -137,10 +138,21 @@ const createWorldPlayer = (
       const playerFleet = state.fleets[1] || state.fleets['1'];
       const ship = playerFleet?.ships?.[0];
 
+      let captain = null;
+      try {
+        captain = getCaptain(0);
+      } catch {
+        try {
+          captain = getSailor(state.protagonistId || '1');
+        } catch {
+          captain = null;
+        }
+      }
+
       speed = heading
         ? getShipSpeed(
-            ship!,
-            getCaptain(0),
+            ship || ({ id: '1' } as any),
+            captain as any,
             directionMap[heading],
             state.wind,
             state.current,

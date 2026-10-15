@@ -7,6 +7,9 @@ import createPort from './game/port/port';
 import state from './state/state';
 import { updateGeneral } from './state/actionsPort';
 import { setDockedFleetPositions } from './state/actionsWorld';
+import { initDevCheats } from './state/devCheats';
+
+initDevCheats();
 
 const start = async () => {
   await Assets.load();

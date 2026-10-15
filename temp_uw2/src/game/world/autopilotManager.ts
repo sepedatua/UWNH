@@ -36,6 +36,32 @@ export const MACRO_COLS = Math.floor(WORLD_MAP_COLUMNS / MACRO_SCALE); // 216 co
 export const MACRO_ROWS = Math.floor(WORLD_MAP_ROWS / MACRO_SCALE); // 108 rows
 export const TOTAL_MACRO_CELLS = MACRO_COLS * MACRO_ROWS; // 23,328 cells
 
+// Waypoint capture thresholds
+export const TRANSIT_WAYPOINT_RADIUS = 2.5; // Smooth turn-in for open-ocean intermediate waypoints
+export const FINAL_WAYPOINT_RADIUS = 0.65;  // Tight capture for final destination tile
+export const LOOKAHEAD_STEPS = 4;           // Multi-step hull probe distance for island evasion
+
+export type CompassHeading = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
+
+export interface HeadingVector {
+  dir: CompassHeading;
+  dx: number;
+  dy: number;
+  angle: number; // Radians in [-PI, PI]
+}
+
+// Ordered clockwise starting from North
+export const COMPASS_ROSE: readonly HeadingVector[] = [
+  { dir: 'n',  dx: 0,  dy: -1, angle: -Math.PI / 2 },
+  { dir: 'ne', dx: 1,  dy: -1, angle: -Math.PI / 4 },
+  { dir: 'e',  dx: 1,  dy: 0,  angle: 0 },
+  { dir: 'se', dx: 1,  dy: 1,  angle: Math.PI / 4 },
+  { dir: 's',  dx: 0,  dy: 1,  angle: Math.PI / 2 },
+  { dir: 'sw', dx: -1, dy: 1,  angle: (3 * Math.PI) / 4 },
+  { dir: 'w',  dx: -1, dy: 0,  angle: Math.PI },
+  { dir: 'nw', dx: -1, dy: -1, angle: -(3 * Math.PI) / 4 },
+];
+
 export interface AutopilotCourse {
   targetPortId: string;
   portName: string;
@@ -70,7 +96,14 @@ class AutopilotManager {
   private lastProgressWaypointIndex: number = -1;
   private changeListeners: Set<() => void> = new Set();
 
-  private resetStuckState(): void {
+  // Evasion & anti-oscillation state
+  private evasionChirality: -1 | 0 | 1 = 0; // -1 = CCW (Port), +1 = CW (Starboard), 0 = None
+  private evasionLockTicks: number = 0;
+  private lastHeading: Direction | '' = '';
+  private lastPosition: Position | null = null;
+  private detourRecoveryAttempts: number = 0;
+
+  public resetStuckState(): void {
     this.lastStuckPos = null;
     this.stuckTicks = 0;
     this.stagnantTicks = 0;
@@ -79,6 +112,11 @@ class AutopilotManager {
     this.consecutiveStuckEvents = 0;
     this.lastProgressDist = Infinity;
     this.lastProgressWaypointIndex = -1;
+    this.evasionChirality = 0;
+    this.evasionLockTicks = 0;
+    this.lastHeading = '';
+    this.lastPosition = null;
+    this.detourRecoveryAttempts = 0;
   }
 
   constructor() {
@@ -117,26 +155,26 @@ class AutopilotManager {
           continue;
         }
 
-        // Sample 25 points across the 10x10 cell to evaluate water clearance
+        // Sample all 100 tiles across the 10x10 cell to evaluate water clearance without missing micro-islands
         const startX = c * MACRO_SCALE;
         const startY = r * MACRO_SCALE;
         let waterCount = 0;
 
-        for (let dy = 0; dy < MACRO_SCALE; dy += 2) {
-          for (let dx = 0; dx < MACRO_SCALE; dx += 2) {
+        for (let dy = 0; dy < MACRO_SCALE; dy++) {
+          const rowOffset = (startY + dy) * WORLD_MAP_COLUMNS;
+          for (let dx = 0; dx < MACRO_SCALE; dx++) {
             const tx = (startX + dx) % WORLD_MAP_COLUMNS;
-            const ty = startY + dy;
-            const tile = tilemap[ty * WORLD_MAP_COLUMNS + tx] || 0;
+            const tile = tilemap[rowOffset + tx] || 0;
             if (tile < 50) {
               waterCount++;
             }
           }
         }
 
-        if (waterCount === 25) {
+        if (waterCount === 100) {
           this.macroGrid[idx] = 1; // Pure open ocean (cost multiplier = 1.0)
         } else if (waterCount > 0) {
-          this.macroGrid[idx] = 2; // Coastal / narrow water (cost multiplier = 4.5)
+          this.macroGrid[idx] = 2; // Coastal / narrow water (cost multiplier = 6.0)
         } else {
           this.macroGrid[idx] = 0; // Impassable land
         }
@@ -177,10 +215,193 @@ class AutopilotManager {
   }
 
   /**
-   * Continuous raycast checking whether a direct line between two positions
-   * is completely free of land obstacles (tile < 50) including 4-tile ship clearance footprint.
+   * Verifies that two adjacent macro cells share an unobstructed navigable water boundary.
+   * Prevents impossible diagonal jumps across isthmuses and peninsulas (e.g. northern Sumatra at Pasei).
    */
-  public hasWaterLineOfSight(p1: Position, p2: Position): boolean {
+  public hasSharedWaterBoundary(c1: number, r1: number, c2: number, r2: number): boolean {
+    const dc = c2 - c1;
+    const dr = r2 - r1;
+    const type1 = this.getMacroCellType(c1, r1);
+    const type2 = this.getMacroCellType(c2, r2);
+    if (type1 === 0 || type2 === 0) return false;
+
+    // Strict No-Corner-Cutting for diagonal transitions
+    if (dc !== 0 && dr !== 0) {
+      const orth1 = this.getMacroCellType(c1 + dc, r1);
+      const orth2 = this.getMacroCellType(c1, r1 + dr);
+      if (orth1 === 0 || orth2 === 0) {
+        return false; // Land on either orthogonal side pinches off the diagonal
+      }
+      // If all surrounding cells are pure ocean, diagonal is wide open
+      if (type1 === 1 && type2 === 1 && orth1 === 1 && orth2 === 1) {
+        return true;
+      }
+    } else {
+      // Orthogonal move between two pure ocean cells is always wide open
+      if (type1 === 1 && type2 === 1) {
+        return true;
+      }
+    }
+
+    let tilemap: Uint8Array | null = null;
+    try {
+      tilemap = Assets.data('worldTilemap');
+    } catch {
+      tilemap = null;
+    }
+
+    if (!tilemap || tilemap.length < WORLD_MAP_COLUMNS * WORLD_MAP_ROWS) {
+      return true;
+    }
+
+    // Horizontal step: check shared vertical boundary tiles
+    if (dc !== 0 && dr === 0) {
+      const x1 = ((dc > 0 ? c1 * MACRO_SCALE + 9 : c1 * MACRO_SCALE) % WORLD_MAP_COLUMNS + WORLD_MAP_COLUMNS) % WORLD_MAP_COLUMNS;
+      const x2 = ((dc > 0 ? c2 * MACRO_SCALE : c2 * MACRO_SCALE + 9) % WORLD_MAP_COLUMNS + WORLD_MAP_COLUMNS) % WORLD_MAP_COLUMNS;
+      for (let dy = 0; dy < MACRO_SCALE; dy++) {
+        const y = r1 * MACRO_SCALE + dy;
+        if (tilemap[y * WORLD_MAP_COLUMNS + x1] < 50 && tilemap[y * WORLD_MAP_COLUMNS + x2] < 50) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Vertical step: check shared horizontal boundary tiles
+    if (dc === 0 && dr !== 0) {
+      const y1 = dr > 0 ? r1 * MACRO_SCALE + 9 : r1 * MACRO_SCALE;
+      const y2 = dr > 0 ? r2 * MACRO_SCALE : r2 * MACRO_SCALE + 9;
+      for (let dx = 0; dx < MACRO_SCALE; dx++) {
+        const x = ((c1 * MACRO_SCALE + dx) % WORLD_MAP_COLUMNS + WORLD_MAP_COLUMNS) % WORLD_MAP_COLUMNS;
+        if (tilemap[y1 * WORLD_MAP_COLUMNS + x] < 50 && tilemap[y2 * WORLD_MAP_COLUMNS + x] < 50) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Diagonal step with coastal cells: check the corner intersection tiles
+    if (dc !== 0 && dr !== 0) {
+      const cornerX1 = ((dc > 0 ? c1 * MACRO_SCALE + 9 : c1 * MACRO_SCALE) % WORLD_MAP_COLUMNS + WORLD_MAP_COLUMNS) % WORLD_MAP_COLUMNS;
+      const cornerY1 = dr > 0 ? r1 * MACRO_SCALE + 9 : r1 * MACRO_SCALE;
+      const cornerX2 = ((dc > 0 ? c2 * MACRO_SCALE : c2 * MACRO_SCALE + 9) % WORLD_MAP_COLUMNS + WORLD_MAP_COLUMNS) % WORLD_MAP_COLUMNS;
+      const cornerY2 = dr > 0 ? r2 * MACRO_SCALE : r2 * MACRO_SCALE + 9;
+
+      return tilemap[cornerY1 * WORLD_MAP_COLUMNS + cornerX1] < 50 && tilemap[cornerY2 * WORLD_MAP_COLUMNS + cornerX2] < 50;
+    }
+
+    return true;
+  }
+
+  // ============================================================================
+  // GEOMETRY & 2x2 HULL CLEARANCE HELPERS
+  // ============================================================================
+
+  public wrapX(x: number): number {
+    return ((Math.floor(x) % WORLD_MAP_COLUMNS) + WORLD_MAP_COLUMNS) % WORLD_MAP_COLUMNS;
+  }
+
+  public clampY(y: number): number {
+    return Math.max(0, Math.min(WORLD_MAP_ROWS - 1, Math.floor(y)));
+  }
+
+  public getShortestDx(fromX: number, toX: number): number {
+    let dx = toX - fromX;
+    if (dx > WORLD_MAP_COLUMNS / 2) dx -= WORLD_MAP_COLUMNS;
+    if (dx < -WORLD_MAP_COLUMNS / 2) dx += WORLD_MAP_COLUMNS;
+    return dx;
+  }
+
+  public getToroidalDistance(p1: Position, p2: Position): number {
+    const dx = this.getShortestDx(p1.x, p2.x);
+    const dy = p2.y - p1.y;
+    return Math.hypot(dx, dy);
+  }
+
+  /**
+   * Checks whether the flagship's 2x2 footprint at (x, y) — plus an optional
+   * safety margin (in tiles) — is completely clear of land (tile < 50).
+   */
+  public isShipFootprintClear(
+    x: number,
+    y: number,
+    margin: number = 0,
+    tilemap?: Uint8Array,
+  ): boolean {
+    let tmap = tilemap;
+    if (!tmap) {
+      try {
+        tmap = Assets.data('worldTilemap');
+      } catch {
+        tmap = null;
+      }
+    }
+    if (!tmap || tmap.length < WORLD_MAP_COLUMNS * WORLD_MAP_ROWS) {
+      return true; // Test environment without loaded asset
+    }
+
+    const baseX = Math.floor(x);
+    const baseY = Math.floor(y);
+
+    if (baseY - margin < 0 || baseY + 1 + margin >= WORLD_MAP_ROWS) {
+      return false;
+    }
+
+    for (let oy = -margin; oy <= 1 + margin; oy++) {
+      const ty = baseY + oy;
+      const rowOffset = ty * WORLD_MAP_COLUMNS;
+      for (let ox = -margin; ox <= 1 + margin; ox++) {
+        const tx = this.wrapX(baseX + ox);
+        if (tmap[rowOffset + tx] >= 50) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Checks whether stepping from (fromX, fromY) by (dx, dy) in 1 tile increment
+   * is completely free of collision, including diagonal corner-clipping checks.
+   */
+  public canStep2x2(
+    fromX: number,
+    fromY: number,
+    dx: number,
+    dy: number,
+    tilemap?: Uint8Array,
+  ): boolean {
+    const nextX = fromX + dx;
+    const nextY = fromY + dy;
+
+    if (!this.isShipFootprintClear(nextX, nextY, 0, tilemap)) {
+      return false;
+    }
+
+    if (dx !== 0 && dy !== 0) {
+      if (
+        !this.isShipFootprintClear(fromX + dx, fromY, 0, tilemap) ||
+        !this.isShipFootprintClear(fromX, fromY + dy, 0, tilemap)
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Continuous raycast checking whether a direct line between two positions
+   * is completely free of land obstacles (tile < 50) including 2x2 ship clearance footprint.
+   */
+  public hasWaterLineOfSight(
+    p1: Position,
+    p2: Position,
+    coastalMargin: number = 0,
+    terminalAnchor1?: Position,
+    terminalAnchor2?: Position,
+    requireExplored: boolean = false,
+  ): boolean {
     let tilemap: Uint8Array | null = null;
     try {
       tilemap = Assets.data('worldTilemap');
@@ -192,30 +413,74 @@ class AutopilotManager {
       return true; // Test environment without loaded asset
     }
 
-    let dx = p2.x - p1.x;
-    if (dx > WORLD_MAP_COLUMNS / 2) dx -= WORLD_MAP_COLUMNS;
-    if (dx < -WORLD_MAP_COLUMNS / 2) dx += WORLD_MAP_COLUMNS;
+    const dx = this.getShortestDx(p1.x, p2.x);
     const dy = p2.y - p1.y;
-
     const dist = Math.hypot(dx, dy);
-    if (dist < 0.5) return true;
 
-    const steps = Math.ceil(dist * 2); // 0.5-tile resolution
+    if (dist < 0.25) {
+      if (requireExplored && !explorationManager.isPositionExplored(p2.x, p2.y)) {
+        return false;
+      }
+      return this.isShipFootprintClear(p2.x, p2.y, 0, tilemap);
+    }
+
+    // Sample every 0.4 tiles so diagonal rays cannot skip across grid corners
+    const steps = Math.max(2, Math.ceil(dist * 2.5));
+    let prevFloorX = Math.floor(p1.x);
+    let prevFloorY = Math.floor(p1.y);
+
     for (let s = 0; s <= steps; s++) {
       const t = s / steps;
-      const curX = ((Math.floor(p1.x + dx * t) % WORLD_MAP_COLUMNS) + WORLD_MAP_COLUMNS) % WORLD_MAP_COLUMNS;
-      const curY = Math.max(0, Math.min(WORLD_MAP_ROWS - 1, Math.floor(p1.y + dy * t)));
+      const sampleX = p1.x + dx * t;
+      const sampleY = p1.y + dy * t;
 
-      const nextX = (curX + 1) % WORLD_MAP_COLUMNS;
-      const nextY = Math.min(WORLD_MAP_ROWS - 1, curY + 1);
+      const floorX = Math.floor(sampleX);
+      const floorY = Math.floor(sampleY);
 
-      if (
-        tilemap[curY * WORLD_MAP_COLUMNS + curX] >= 50 ||
-        tilemap[curY * WORLD_MAP_COLUMNS + nextX] >= 50 ||
-        tilemap[nextY * WORLD_MAP_COLUMNS + curX] >= 50 ||
-        tilemap[nextY * WORLD_MAP_COLUMNS + nextX] >= 50
-      ) {
+      // 1. Strict 2x2 flagship footprint MUST always be clear at every sample
+      if (!this.isShipFootprintClear(floorX, floorY, 0, tilemap)) {
         return false;
+      }
+
+      // 2. Prevent diagonal corner-cutting between consecutive integer grid cells
+      if (floorX !== prevFloorX && floorY !== prevFloorY) {
+        if (
+          !this.isShipFootprintClear(floorX, prevFloorY, 0, tilemap) ||
+          !this.isShipFootprintClear(prevFloorX, floorY, 0, tilemap)
+        ) {
+          return false;
+        }
+      }
+      prevFloorX = floorX;
+      prevFloorY = floorY;
+
+      // 3. Apply coastal safety margin outside immediate 3.2-tile terminal anchor zones
+      if (coastalMargin > 0) {
+        let dStart = Infinity;
+        if (terminalAnchor1) {
+          let ax = Math.abs(sampleX - terminalAnchor1.x);
+          if (ax > WORLD_MAP_COLUMNS / 2) ax = WORLD_MAP_COLUMNS - ax;
+          dStart = Math.hypot(ax, sampleY - terminalAnchor1.y);
+        }
+        let dEnd = Infinity;
+        if (terminalAnchor2) {
+          let bx = Math.abs(sampleX - terminalAnchor2.x);
+          if (bx > WORLD_MAP_COLUMNS / 2) bx = WORLD_MAP_COLUMNS - bx;
+          dEnd = Math.hypot(bx, sampleY - terminalAnchor2.y);
+        }
+
+        if (dStart > 3.2 && dEnd > 3.2) {
+          if (!this.isShipFootprintClear(floorX, floorY, coastalMargin, tilemap)) {
+            return false;
+          }
+        }
+      }
+
+      // 4. Strictly enforce Explored-Only Rule along the entire smoothed corridor
+      if (requireExplored) {
+        if (!explorationManager.isPositionExplored(sampleX, sampleY)) {
+          return false;
+        }
       }
     }
 
@@ -246,11 +511,16 @@ class AutopilotManager {
 
     const cellType = this.getMacroCellType(col, row);
     // If pure open ocean, check line of sight if refPos is given, else center is 100% deep water
-    if (cellType === 1 && (!refPos || this.hasWaterLineOfSight(refPos, defaultPos))) {
+    if (
+      cellType === 1 &&
+      this.isShipFootprintClear(defaultPos.x, defaultPos.y, 0, tilemap) &&
+      (!refPos || this.hasWaterLineOfSight(refPos, defaultPos))
+    ) {
       return defaultPos;
     }
 
     // For coastal/bottleneck cells, search for the tile with highest clearance from land
+    // and verified 2x2 hull clearance
     const startX = col * MACRO_SCALE;
     const startY = row * MACRO_SCALE;
     let bestX = defaultPos.x;
@@ -263,9 +533,12 @@ class AutopilotManager {
         const ty = startY + dy;
         if (tilemap[ty * WORLD_MAP_COLUMNS + tx] >= 50) continue; // Skip land
 
+        // Hull clearance: flagship 2x2 footprint MUST be clear
+        if (!this.isShipFootprintClear(tx, ty, 0, tilemap)) continue;
+
         let minDist = 99;
-        for (let sdy = -2; sdy <= 2; sdy++) {
-          for (let sdx = -2; sdx <= 2; sdx++) {
+        for (let sdy = -4; sdy <= 4; sdy++) {
+          for (let sdx = -4; sdx <= 4; sdx++) {
             const stx = ((tx + sdx) % WORLD_MAP_COLUMNS + WORLD_MAP_COLUMNS) % WORLD_MAP_COLUMNS;
             const sty = ty + sdy;
             if (sty >= 0 && sty < WORLD_MAP_ROWS && tilemap[sty * WORLD_MAP_COLUMNS + stx] >= 50) {
@@ -277,12 +550,16 @@ class AutopilotManager {
 
         let reachableBonus = 0;
         if (refPos) {
-          if (this.hasWaterLineOfSight(refPos, { x: tx, y: ty })) {
-            reachableBonus = 100;
+          if (this.hasWaterLineOfSight(refPos, { x: tx, y: ty }, 0)) {
+            reachableBonus = 50;
           }
         }
 
-        const score = minDist + reachableBonus;
+        // Slight center bias to prevent hugging cell borders if clearance is equal
+        const centerDist = Math.hypot(dx - 4.5, dy - 4.5);
+        const centerBonus = Math.max(0, 5 - centerDist);
+
+        const score = minDist * 10 + reachableBonus + centerBonus;
         if (score > bestScore) {
           bestScore = score;
           bestX = tx;
@@ -383,7 +660,7 @@ class AutopilotManager {
 
       if (current === goalIndex) {
         // Goal reached! Reconstruct macro cell path with deepest-water waypoints
-        return this.reconstructPath(cameFrom, current, startPos, goalPos);
+        return this.reconstructPath(cameFrom, current, startPos, goalPos, requireExplored);
       }
 
       openSet.splice(lowestIdx, 1);
@@ -403,6 +680,12 @@ class AutopilotManager {
         // Verify navigable water
         const cellType = this.getMacroCellType(nextCol, nextRow);
         if (cellType === 0 && nextIndex !== goalIndex) {
+          continue;
+        }
+
+        // Strict No-Corner-Cutting & Shared Water Boundary Check:
+        // Guarantees ships never cut diagonal corners or jump over landmasses (e.g. northern Sumatra at Pasei, or Malaysia at Malacca)
+        if (!this.hasSharedWaterBoundary(currCol, currRow, nextCol, nextRow)) {
           continue;
         }
 
@@ -440,14 +723,159 @@ class AutopilotManager {
   }
 
   /**
+   * Finds the navigable portal midpoint between two adjacent macro cells.
+   * Used as intermediate stepping-stone funnel waypoints through narrow straits.
+   */
+  public getSharedBoundaryPortal(c1: number, r1: number, c2: number, r2: number): Position | null {
+    let tilemap: Uint8Array | null = null;
+    try {
+      tilemap = Assets.data('worldTilemap');
+    } catch {
+      tilemap = null;
+    }
+    if (!tilemap) return null;
+
+    const dc = c2 - c1;
+    const dr = r2 - r1;
+
+    // Horizontal transition: shared vertical boundary
+    if (dc !== 0 && dr === 0) {
+      const boundaryX = dc > 0 ? c2 * MACRO_SCALE : c1 * MACRO_SCALE;
+      const xLeft = this.wrapX(boundaryX - 1);
+      const xRight = this.wrapX(boundaryX);
+      const yList: number[] = [];
+      for (let dy = 0; dy < MACRO_SCALE; dy++) {
+        const y = r1 * MACRO_SCALE + dy;
+        if (
+          this.isShipFootprintClear(xLeft, y, 0, tilemap) &&
+          this.isShipFootprintClear(xRight, y, 0, tilemap)
+        ) {
+          yList.push(y);
+        }
+      }
+      if (yList.length > 0) {
+        return { x: xRight, y: yList[Math.floor(yList.length / 2)] };
+      }
+    }
+
+    // Vertical transition: shared horizontal boundary
+    if (dc === 0 && dr !== 0) {
+      const boundaryY = dr > 0 ? r2 * MACRO_SCALE : r1 * MACRO_SCALE;
+      const yUp = boundaryY - 1;
+      const yDown = boundaryY;
+      const xList: number[] = [];
+      for (let dx = 0; dx < MACRO_SCALE; dx++) {
+        const x = this.wrapX(c1 * MACRO_SCALE + dx);
+        if (
+          this.isShipFootprintClear(x, yUp, 0, tilemap) &&
+          this.isShipFootprintClear(x, yDown, 0, tilemap)
+        ) {
+          xList.push(x);
+        }
+      }
+      if (xList.length > 0) {
+        return { x: xList[Math.floor(xList.length / 2)], y: yDown };
+      }
+    }
+
+    // Diagonal transition: shared corner
+    if (dc !== 0 && dr !== 0) {
+      const cornerX = dc > 0 ? c2 * MACRO_SCALE : c1 * MACRO_SCALE;
+      const cornerY = dr > 0 ? r2 * MACRO_SCALE : r1 * MACRO_SCALE;
+      if (this.isShipFootprintClear(cornerX, cornerY, 0, tilemap)) {
+        return { x: cornerX, y: cornerY };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Fast bounded local A* to route around irregular islands between adjacent macro waypoints.
+   * Guarantees zero obstacle collision even in convoluted archipelagos.
+   */
+  public findLocalCorridorPath(fromPos: Position, toPos: Position): Position[] | null {
+    let tilemap: Uint8Array | null = null;
+    try {
+      tilemap = Assets.data('worldTilemap');
+    } catch {
+      tilemap = null;
+    }
+    if (!tilemap) return null;
+
+    const startX = Math.round(fromPos.x);
+    const startY = Math.round(fromPos.y);
+    const goalX = Math.round(toPos.x);
+    const goalY = Math.round(toPos.y);
+
+    const startKey = `${startX},${startY}`;
+    const gScore = new Map<string, number>([[startKey, 0]]);
+    const cameFrom = new Map<string, string>();
+    const openSet: Array<{ x: number; y: number; f: number }> = [
+      { x: startX, y: startY, f: Math.hypot(startX - goalX, startY - goalY) },
+    ];
+
+    const DIRS = [
+      { dx: 0, dy: -1 }, { dx: 1, dy: -1 }, { dx: 1, dy: 0 }, { dx: 1, dy: 1 },
+      { dx: 0, dy: 1 }, { dx: -1, dy: 1 }, { dx: -1, dy: 0 }, { dx: -1, dy: -1 },
+    ];
+
+    let iterations = 0;
+    while (openSet.length > 0 && iterations++ < 1500) {
+      let lowestIdx = 0;
+      for (let i = 1; i < openSet.length; i++) {
+        if (openSet[i].f < openSet[lowestIdx].f) lowestIdx = i;
+      }
+      const curr = openSet.splice(lowestIdx, 1)[0];
+      if (curr.x === goalX && curr.y === goalY) {
+        const path: Position[] = [];
+        let c: string | undefined = `${curr.x},${curr.y}`;
+        while (c) {
+          const [x, y] = c.split(',').map(Number);
+          path.unshift({ x, y });
+          c = cameFrom.get(c);
+        }
+        return path;
+      }
+
+      const curKey = `${curr.x},${curr.y}`;
+      const curG = gScore.get(curKey) ?? 0;
+
+      for (const d of DIRS) {
+        const nx = this.wrapX(curr.x + d.dx);
+        const ny = this.clampY(curr.y + d.dy);
+        if (!this.canStep2x2(curr.x, curr.y, d.dx, d.dy, tilemap)) continue;
+
+        const nKey = `${nx},${ny}`;
+        const stepCost = d.dx !== 0 && d.dy !== 0 ? 1.414 : 1.0;
+        const tentativeG = curG + stepCost;
+
+        if (tentativeG < (gScore.get(nKey) ?? Infinity)) {
+          cameFrom.set(nKey, curKey);
+          gScore.set(nKey, tentativeG);
+          const f = tentativeG + Math.hypot(nx - goalX, ny - goalY);
+          const existing = openSet.find((n) => n.x === nx && n.y === ny);
+          if (existing) {
+            existing.f = f;
+          } else {
+            openSet.push({ x: nx, y: ny, f });
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
    * Reconstructs macro cell coordinates and generates verified deepest-water waypoints
-   * using continuous raycast line-of-sight path smoothing.
+   * using portal funneling and continuous raycast line-of-sight path smoothing.
    */
   private reconstructPath(
     cameFrom: Int32Array,
     current: number,
     startPos: Position,
     goalPos: Position,
+    requireExplored: boolean = true,
   ): Position[] {
     const rawCells: { col: number; row: number }[] = [];
     let curr = current;
@@ -460,34 +888,72 @@ class AutopilotManager {
     }
     rawCells.reverse();
 
-    // Generate candidate water waypoints along the cell sequence
+    // Generate candidate water waypoints along the cell sequence with portal funneling & corridor bridging
     const candidatePoints: Position[] = [startPos];
     let prevPoint = startPos;
     for (let i = 1; i < rawCells.length - 1; i++) {
       const wp = this.getBestWaterTile(rawCells[i].col, rawCells[i].row, prevPoint);
+      if (!this.hasWaterLineOfSight(prevPoint, wp)) {
+        const portal = this.getSharedBoundaryPortal(
+          rawCells[i - 1].col,
+          rawCells[i - 1].row,
+          rawCells[i].col,
+          rawCells[i].row,
+        );
+        if (
+          portal &&
+          this.hasWaterLineOfSight(prevPoint, portal) &&
+          this.hasWaterLineOfSight(portal, wp)
+        ) {
+          candidatePoints.push(portal);
+          prevPoint = portal;
+        } else {
+          // If portal alone does not clear the island, bridge via local corridor A*
+          const bridge = this.findLocalCorridorPath(prevPoint, wp);
+          if (bridge && bridge.length > 2) {
+            const smoothedBridge = this.smoothPathWaypoints(bridge, requireExplored);
+            for (let b = 1; b < smoothedBridge.length - 1; b++) {
+              candidatePoints.push(smoothedBridge[b]);
+            }
+          }
+        }
+      }
       candidatePoints.push(wp);
       prevPoint = wp;
     }
-    candidatePoints.push(goalPos);
 
-    // Raycast Line-of-Sight Path Smoothing (guarantees zero island-clipping)
-    const waypoints: Position[] = [startPos];
-    let currentIdx = 0;
-
-    while (currentIdx < candidatePoints.length - 1) {
-      let furthestIdx = currentIdx + 1;
-      // Look ahead up to 10 nodes to smoothly combine open-water cells
-      const maxLookAhead = Math.min(candidatePoints.length - 1, currentIdx + 10);
-      for (let nextIdx = maxLookAhead; nextIdx > currentIdx; nextIdx--) {
-        if (this.hasWaterLineOfSight(candidatePoints[currentIdx], candidatePoints[nextIdx])) {
-          furthestIdx = nextIdx;
-          break;
+    // Connect final candidate waypoint to goalPos via boundary portal or corridor bridge if needed
+    if (!this.hasWaterLineOfSight(prevPoint, goalPos)) {
+      if (rawCells.length >= 2) {
+        const lastCell = rawCells[rawCells.length - 1];
+        const prevCell = rawCells[rawCells.length - 2];
+        const portal = this.getSharedBoundaryPortal(
+          prevCell.col,
+          prevCell.row,
+          lastCell.col,
+          lastCell.row,
+        );
+        if (
+          portal &&
+          this.hasWaterLineOfSight(prevPoint, portal) &&
+          this.hasWaterLineOfSight(portal, goalPos)
+        ) {
+          candidatePoints.push(portal);
+          prevPoint = portal;
+        } else {
+          const bridge = this.findLocalCorridorPath(prevPoint, goalPos);
+          if (bridge && bridge.length > 2) {
+            const smoothedBridge = this.smoothPathWaypoints(bridge, requireExplored);
+            for (let b = 1; b < smoothedBridge.length - 1; b++) {
+              candidatePoints.push(smoothedBridge[b]);
+            }
+          }
         }
       }
-
-      waypoints.push(candidatePoints[furthestIdx]);
-      currentIdx = furthestIdx;
     }
+    candidatePoints.push(goalPos);
+
+    const waypoints = this.smoothPathWaypoints(candidatePoints, requireExplored);
 
     // Ensure goal is the final waypoint
     if (
@@ -496,6 +962,57 @@ class AutopilotManager {
       waypoints[waypoints.length - 1].y !== goalPos.y
     ) {
       waypoints.push(goalPos);
+    }
+
+    return waypoints;
+  }
+
+  /**
+   * Upgraded string-pulling path smoother with adaptive density and Fog-of-War verification.
+   * - In open deep ocean: pulls long straight chords (lookahead up to 12 waypoints).
+   * - In coastal / narrow / archipelago corridors (type 2): limits lookahead to 2-3 cells
+   *   to preserve dense channel waypoints along the medial axis.
+   * - Strictly verifies that smoothed rays never cut across unrevealed Fog-of-War waters.
+   */
+  public smoothPathWaypoints(
+    candidatePoints: Position[],
+    requireExplored: boolean = false,
+  ): Position[] {
+    if (candidatePoints.length <= 2) return [...candidatePoints];
+
+    const startPos = candidatePoints[0];
+    const endPos = candidatePoints[candidatePoints.length - 1];
+    const waypoints: Position[] = [startPos];
+    let currentIdx = 0;
+
+    while (currentIdx < candidatePoints.length - 1) {
+      let furthestIdx = currentIdx + 1;
+
+      // In coastal/island corridors, limit lookahead to preserve dense channel stepping stones
+      const curCol = Math.floor(candidatePoints[currentIdx].x / MACRO_SCALE) % MACRO_COLS;
+      const curRow = Math.floor(candidatePoints[currentIdx].y / MACRO_SCALE);
+      const isCoastalArea = this.getMacroCellType(curCol, curRow) === 2;
+      const maxSpan = isCoastalArea ? 3 : 12;
+      const maxLookAhead = Math.min(candidatePoints.length - 1, currentIdx + maxSpan);
+
+      for (let nextIdx = maxLookAhead; nextIdx > currentIdx + 1; nextIdx--) {
+        if (
+          this.hasWaterLineOfSight(
+            candidatePoints[currentIdx],
+            candidatePoints[nextIdx],
+            1, // Enforce 1-tile coastal margin around 2x2 hull in open sea
+            startPos,
+            endPos,
+            requireExplored,
+          )
+        ) {
+          furthestIdx = nextIdx;
+          break;
+        }
+      }
+
+      waypoints.push(candidatePoints[furthestIdx]);
+      currentIdx = furthestIdx;
     }
 
     return waypoints;
@@ -708,10 +1225,73 @@ class AutopilotManager {
     return null;
   }
 
+  // ============================================================================
+  // STEERING, ISLAND EVASION & GUARANTEED PORT DOCKING
+  // ============================================================================
+
+  /**
+   * Checks whether `pos` (or its integer-snapped tile) satisfies `portAdjacentAt`
+   * for the course's target port.
+   */
+  private isDockableAtTargetPort(pos: Position, targetPortId?: string | number | null): boolean {
+    const matchedPortId = portAdjacentAt(pos);
+    if (matchedPortId === null || matchedPortId === undefined) return false;
+    if (targetPortId !== undefined && targetPortId !== null) {
+      return String(matchedPortId) === String(targetPortId);
+    }
+    return true;
+  }
+
+  /**
+   * Searches `currentPos`, its integer-rounded coordinate, and immediate 1-tile
+   * collision-free neighbors for a valid docking position that passes `portAdjacentAt`.
+   */
+  private resolveValidDockPosition(
+    currentPos: Position,
+    targetPortId?: string | number | null,
+  ): Position | null {
+    let tilemap: Uint8Array | null = null;
+    try {
+      tilemap = Assets.data('worldTilemap');
+    } catch {
+      tilemap = null;
+    }
+
+    // 1. Test exact currentPos first
+    if (this.isDockableAtTargetPort(currentPos, targetPortId)) {
+      return currentPos;
+    }
+
+    // 2. Test integer-snapped coordinates and 1-tile neighborhood
+    const rx = this.wrapX(Math.round(currentPos.x));
+    const ry = this.clampY(Math.round(currentPos.y));
+
+    const searchOffsets = [
+      { x: 0, y: 0 },
+      { x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 },
+      { x: 1, y: -1 }, { x: 1, y: 1 }, { x: -1, y: 1 }, { x: -1, y: -1 },
+    ];
+
+    for (const off of searchOffsets) {
+      const candidate: Position = {
+        x: this.wrapX(rx + off.x),
+        y: this.clampY(ry + off.y),
+      };
+      if (
+        (!tilemap || this.isShipFootprintClear(candidate.x, candidate.y, 0, tilemap)) &&
+        this.isDockableAtTargetPort(candidate, targetPortId)
+      ) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
   /**
    * Called every frame in worldCharacters.ts to drive automated navigation.
-   * Features active anti-stuck detection, sustained deflection, net progress tracking,
-   * and auto-disengagement when wedged against obstacles.
+   * Features active anti-stuck detection, multi-step lookahead, sustained deflection,
+   * local BFS detours around protruding headlands, and verified harbor arrival.
    */
   public updateSteering(player: any): boolean {
     if (!this.isActive() || !this.course) {
@@ -727,130 +1307,459 @@ class AutopilotManager {
       return false;
     }
 
-    const currentPos = player.position();
     const waypoints = this.course.waypoints;
-    const target = waypoints[this.course.currentWaypointIndex];
+    const currentPos: Position = player.position();
+    const { targetPortId, enterPortOnArrival } = this.course;
 
-    if (!target) {
-      this.handleArrival(player, currentPos);
-      return false;
-    }
-
-    // Check distance to current waypoint
-    let dx = target.x - currentPos.x;
-    if (dx > WORLD_MAP_COLUMNS / 2) dx -= WORLD_MAP_COLUMNS;
-    if (dx < -WORLD_MAP_COLUMNS / 2) dx += WORLD_MAP_COLUMNS;
-    const dy = target.y - currentPos.y;
-    const dist = Math.hypot(dx, dy);
-
-    // Track waypoint transitions
-    if (this.course.currentWaypointIndex !== this.lastProgressWaypointIndex) {
-      this.lastProgressWaypointIndex = this.course.currentWaypointIndex;
-      this.lastProgressDist = dist;
-      this.stagnantTicks = 0;
-      this.stuckTicks = 0;
-      this.deflectionTicksRemaining = 0;
-      this.consecutiveStuckEvents = 0;
-    }
-
-    // Track physical position movement
-    if (this.lastStuckPos) {
-      let movedX = Math.abs(currentPos.x - this.lastStuckPos.x);
-      if (movedX > WORLD_MAP_COLUMNS / 2) movedX = WORLD_MAP_COLUMNS - movedX;
-      const movedY = Math.abs(currentPos.y - this.lastStuckPos.y);
-      const movedDist = Math.hypot(movedX, movedY);
-
-      if (movedDist < 0.08) {
-        this.stuckTicks++;
-      } else {
-        // Decay rather than instantly resetting to 0 to prevent oscillation loops
-        this.stuckTicks = Math.max(0, this.stuckTicks - 1);
-      }
-    }
-    this.lastStuckPos = { ...currentPos };
-
-    // Track net progress towards target waypoint
-    if (dist < this.lastProgressDist - 0.2) {
-      this.lastProgressDist = dist;
-      this.stagnantTicks = 0;
-      this.consecutiveStuckEvents = 0;
-    } else {
-      this.stagnantTicks++;
-    }
-
-    // Within arrival radius of waypoint
-    if (dist < 2.5) {
-      this.course.currentWaypointIndex++;
-      this.resetStuckState();
-      if (this.course.currentWaypointIndex >= waypoints.length) {
-        this.handleArrival(player, currentPos);
+    // 1. OPPORTUNISTIC HARBOR CAPTURE:
+    // If we are near the end of our route and ALREADY inside the target port's
+    // valid `portAdjacentAt` docking envelope, dock immediately!
+    if (enterPortOnArrival && this.course.currentWaypointIndex >= waypoints.length - 2) {
+      const validDockPos = this.resolveValidDockPosition(currentPos, targetPortId);
+      if (validDockPos && this.getToroidalDistance(currentPos, validDockPos) <= 1.15) {
+        this.handleArrival(player, validDockPos);
         return false;
       }
     }
 
-    // Safety Disengage if stuck against shore / island
+    const isFinalWaypoint = this.course.currentWaypointIndex >= waypoints.length - 1;
+    const target = waypoints[this.course.currentWaypointIndex];
+    if (!target) {
+      this.handleArrival(player, currentPos);
+      return false;
+    }
+    const dx = this.getShortestDx(currentPos.x, target.x);
+    const dy = target.y - currentPos.y;
+    const dist = Math.hypot(dx, dy);
+
+    // 2. WAYPOINT CAPTURE WITH VECTOR PROJECTION RETIREMENT:
+    // - Final waypoint requires tight proximity (0.65 tiles) so we never stop 3-4 tiles out at sea.
+    // - Intermediate waypoints capture if:
+    //     a) dist < TRANSIT_WAYPOINT_RADIUS (2.5 tiles), OR
+    //     b) Vector projection shows the ship reached or passed the orthogonal baseline of target (t >= 0.95)
+    //        within a cross-track tolerance (<= 4.5 tiles), preventing any circular orbiting if pushed by wind/current!
+    let waypointCaptured = false;
+
+    if (isFinalWaypoint) {
+      const finalRadius = enterPortOnArrival ? FINAL_WAYPOINT_RADIUS : 1.0;
+      if (dist < finalRadius) {
+        waypointCaptured = true;
+      }
+    } else {
+      if (dist < TRANSIT_WAYPOINT_RADIUS) {
+        waypointCaptured = true;
+      } else {
+        // Calculate progress along leg from previous waypoint W_prev to target W_curr
+        const prevWp =
+          this.course.currentWaypointIndex > 0
+            ? waypoints[this.course.currentWaypointIndex - 1]
+            : currentPos;
+        const legDx = this.getShortestDx(prevWp.x, target.x);
+        const legDy = target.y - prevWp.y;
+        const legLenSq = legDx * legDx + legDy * legDy;
+
+        if (legLenSq > 1.0) {
+          const shipDx = this.getShortestDx(prevWp.x, currentPos.x);
+          const shipDy = currentPos.y - prevWp.y;
+          // Scalar projection along leg vector
+          const t = (shipDx * legDx + shipDy * legDy) / legLenSq;
+          // Cross-track distance
+          const crossTrack = Math.abs(shipDx * legDy - shipDy * legDx) / Math.sqrt(legLenSq);
+
+          const nextWp =
+            this.course.currentWaypointIndex + 1 < waypoints.length
+              ? waypoints[this.course.currentWaypointIndex + 1]
+              : null;
+
+          if (t >= 0.95 && crossTrack <= 4.5) {
+            waypointCaptured = true;
+          } else if (
+            nextWp &&
+            (t >= 0.95 || this.getToroidalDistance(currentPos, nextWp) < dist) &&
+            this.hasWaterLineOfSight(currentPos, nextWp)
+          ) {
+            waypointCaptured = true;
+          }
+        }
+      }
+    }
+
+    if (waypointCaptured) {
+      this.course.currentWaypointIndex++;
+      this.resetStuckState();
+
+      if (this.course.currentWaypointIndex >= waypoints.length) {
+        // Before concluding arrival, verify whether we can actually dock if requested
+        if (enterPortOnArrival) {
+          const validDockPos = this.resolveValidDockPosition(currentPos, targetPortId);
+          if (validDockPos) {
+            this.handleArrival(player, validDockPos);
+            return false;
+          }
+
+          // If the final waypoint wasn't close enough to pass `portAdjacentAt`
+          // (e.g., a distance-3 offset was used), try finding a true dockable tile
+          // around the port and stepping once more toward it.
+          if (targetPortId !== undefined && targetPortId !== null) {
+            try {
+              const dockTarget = positionAdjacentToPort(String(targetPortId));
+              if (
+                this.getToroidalDistance(currentPos, dockTarget) > 0.65 &&
+                this.detourRecoveryAttempts < 2
+              ) {
+                this.detourRecoveryAttempts++;
+                waypoints.push(dockTarget);
+                this.course.currentWaypointIndex = waypoints.length - 1;
+                // Continue steering toward the exact dockTarget
+              } else {
+                this.handleArrival(player, currentPos);
+                return false;
+              }
+            } catch {
+              this.handleArrival(player, currentPos);
+              return false;
+            }
+          } else {
+            this.handleArrival(player, currentPos);
+            return false;
+          }
+        } else {
+          this.handleArrival(player, currentPos);
+          return false;
+        }
+      }
+    }
+
+    // 3. STUCK DETECTION & SELF-HEALING LOCAL DETOUR INJECTION:
+    if (this.lastPosition) {
+      const movedDist = this.getToroidalDistance(this.lastPosition, currentPos);
+      if (movedDist < 0.05) {
+        this.stuckTicks++;
+        this.stagnantTicks++;
+      } else {
+        this.stuckTicks = 0;
+        if (movedDist > 0.2) this.stagnantTicks = Math.max(0, this.stagnantTicks - 1);
+      }
+    }
+    this.lastPosition = { x: currentPos.x, y: currentPos.y };
+
+    // Sustained deflection window countdown
+    if (this.deflectionTicksRemaining > 0) {
+      this.deflectionTicksRemaining--;
+    }
+
+    // Attempt local BFS detour around protruding island before giving up
+    const activeTarget = waypoints[this.course.currentWaypointIndex];
+    if (
+      (this.stuckTicks >= 4 || this.consecutiveStuckEvents >= 2 || this.stagnantTicks >= 12) &&
+      this.detourRecoveryAttempts < 3 &&
+      activeTarget
+    ) {
+      if (this.tryInjectLocalBypassWaypoint(currentPos, activeTarget)) {
+        this.detourRecoveryAttempts++;
+        this.resetStuckState();
+      }
+    }
+
+    // Hard abort only if local detour recovery also failed to free the ship
     if (this.consecutiveStuckEvents >= 4 || this.stuckTicks >= 8 || this.stagnantTicks >= 24) {
       soundManager.playSfx('shipBell');
-      this.cancelCourse('⚠️ Coastal Shallows Hazard: Fleet was impeded by shore/island terrain. Disengaged autopilot for manual navigation.');
+      this.cancelCourse(
+        '⚠️ Coastal Shallows Hazard: Fleet was impeded by shore/island terrain. Disengaged autopilot for manual navigation.',
+      );
       player.setHeading('');
       return false;
     }
 
-    // Calculate base heading towards next waypoint
-    const nextTarget = waypoints[this.course.currentWaypointIndex];
-    let ndx = nextTarget.x - currentPos.x;
-    if (ndx > WORLD_MAP_COLUMNS / 2) ndx -= WORLD_MAP_COLUMNS;
-    if (ndx < -WORLD_MAP_COLUMNS / 2) ndx += WORLD_MAP_COLUMNS;
-    const ndy = nextTarget.y - currentPos.y;
-    const baseHeading = this.vectorToDirection(ndx, ndy);
+    // 4. COMPUTE HEADING WITH MULTI-STEP LOOKAHEAD & CHIRALITY LOCK
+    const currentTarget = waypoints[this.course.currentWaypointIndex] || activeTarget;
+    const finalApproach = this.course.currentWaypointIndex >= waypoints.length - 1;
 
-    let finalHeading = baseHeading;
+    let heading: Direction | '' = '';
+    if (this.deflectionTicksRemaining > 0 && this.activeDeflectionDir) {
+      heading = this.activeDeflectionDir;
+    } else {
+      heading = this.computeDeflectionHeading(currentPos, currentTarget, finalApproach);
+    }
 
-    // Trigger Sustained Deflection if stuck
+    // If stuck ticks >= 2 and not currently deflecting, engage sustained deflection for 6 ticks
     if (this.stuckTicks >= 2 && this.deflectionTicksRemaining <= 0) {
       this.consecutiveStuckEvents++;
-
-      // Try skipping ahead if next waypoint is nearby and visible
-      if (this.consecutiveStuckEvents >= 2 && this.course.currentWaypointIndex < waypoints.length - 1) {
-        const nextWp = waypoints[this.course.currentWaypointIndex + 1];
-        if (dist < 6.0 && this.hasWaterLineOfSight(currentPos, nextWp)) {
-          this.course.currentWaypointIndex++;
-          this.resetStuckState();
-          return true;
-        }
-      }
-
-      // Engage sustained deflection for 6 frames
       this.deflectionTicksRemaining = 6;
-      this.activeDeflectionDir = this.getDeflectionHeading(baseHeading, this.consecutiveStuckEvents);
+      this.activeDeflectionDir = heading || this.lastHeading || this.vectorToDirection(dx, dy);
+      heading = this.activeDeflectionDir;
     }
 
-    // Apply active deflection heading if deflection window is active
-    if (this.deflectionTicksRemaining > 0) {
-      this.deflectionTicksRemaining--;
-      finalHeading = this.activeDeflectionDir || baseHeading;
+    if (!heading) {
+      this.consecutiveStuckEvents++;
+      player.setHeading('');
+      return false;
     }
 
-    player.setHeading(finalHeading);
+    this.lastHeading = heading;
+    player.setHeading(heading);
     return true;
   }
 
   /**
-   * Generates a 45-degree deflection heading to smoothly slide off obstacles.
+   * Probes up to `LOOKAHEAD_STEPS` tiles along a compass direction to measure:
+   * - `freeSteps`: how many consecutive 2x2 hull steps are unobstructed
+   * - `hasCoastalBuffer`: whether the first 2 steps also clear a 1-tile coastal margin
    */
-  public getDeflectionHeading(dir: Direction, tick: number): Direction {
-    const directions: Direction[] = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
-    const idx = directions.indexOf(dir);
-    if (idx === -1) return dir;
-    const offset = tick % 2 === 0 ? 1 : -1;
-    const newIdx = (idx + offset + 8) % 8;
-    return directions[newIdx];
+  private probeHeadingClearance(
+    pos: Position,
+    hv: HeadingVector,
+    tilemap: Uint8Array | null,
+  ): { freeSteps: number; hasCoastalBuffer: boolean } {
+    if (!tilemap || tilemap.length < WORLD_MAP_COLUMNS * WORLD_MAP_ROWS) {
+      return { freeSteps: LOOKAHEAD_STEPS, hasCoastalBuffer: true };
+    }
+    let curX = Math.round(pos.x);
+    let curY = Math.round(pos.y);
+    let freeSteps = 0;
+    let hasCoastalBuffer = true;
+
+    for (let step = 1; step <= LOOKAHEAD_STEPS; step++) {
+      if (!this.canStep2x2(curX, curY, hv.dx, hv.dy, tilemap)) {
+        break;
+      }
+      curX = this.wrapX(curX + hv.dx);
+      curY = this.clampY(curY + hv.dy);
+      freeSteps = step;
+
+      if (step <= 2 && !this.isShipFootprintClear(curX, curY, 1, tilemap)) {
+        hasCoastalBuffer = false;
+      }
+    }
+
+    return { freeSteps, hasCoastalBuffer };
   }
 
   /**
-   * Handles arrival at destination port.
+   * Computes a collision-free compass heading toward `target` using:
+   * 1) Multi-step 2x2 hull lookahead (`LOOKAHEAD_STEPS = 4`).
+   * 2) Persistent chirality lock (`this.evasionChirality`) to prevent ping-ponging
+   *    against protruding islands.
+   * 3) Momentum anti-reversal bias so the ship sweeps smoothly around headlands.
    */
-  private handleArrival(player: any, currentPos: Position): void {
+  public computeDeflectionHeading(
+    currentPos: Position,
+    target: Position,
+    isFinalApproach: boolean = false,
+  ): Direction | '' {
+    let tilemap: Uint8Array | null = null;
+    try {
+      tilemap = Assets.data('worldTilemap');
+    } catch {
+      tilemap = null;
+    }
+
+    const dx = this.getShortestDx(currentPos.x, target.x);
+    const dy = target.y - currentPos.y;
+    const distToTarget = Math.hypot(dx, dy);
+    const desiredAngle = Math.atan2(dy, dx);
+
+    // Find closest index on the 8-wind compass rose
+    let idealIdx = 0;
+    let minAngleDiff = Infinity;
+    for (let i = 0; i < COMPASS_ROSE.length; i++) {
+      const diff = Math.abs(this.normalizeAngle(COMPASS_ROSE[i].angle - desiredAngle));
+      if (diff < minAngleDiff) {
+        minAngleDiff = diff;
+        idealIdx = i;
+      }
+    }
+
+    const requiredSteps = isFinalApproach
+      ? Math.max(1, Math.min(2, Math.ceil(distToTarget)))
+      : Math.min(LOOKAHEAD_STEPS, Math.max(2, Math.ceil(distToTarget)));
+
+    const idealProbe = this.probeHeadingClearance(currentPos, COMPASS_ROSE[idealIdx], tilemap);
+
+    // Direct path is wide open: instantly clear evasion lock and proceed straight
+    if (
+      idealProbe.freeSteps >= requiredSteps &&
+      (isFinalApproach || idealProbe.hasCoastalBuffer)
+    ) {
+      this.evasionLockTicks = 0;
+      this.evasionChirality = 0;
+      return COMPASS_ROSE[idealIdx].dir;
+    }
+
+    // --- OBSTACLE DETECTED OR EVASION LOCK ACTIVE ---
+    // Evaluate both Counter-Clockwise (chirality = -1) and Clockwise (chirality = +1) sweeps
+    const oppositeDir = this.getOppositeHeading(this.lastHeading);
+
+    const scoreCandidate = (idx: number, offsetSteps: number, chirality: -1 | 1): number => {
+      const hv = COMPASS_ROSE[idx];
+      const probe = this.probeHeadingClearance(currentPos, hv, tilemap);
+      if (probe.freeSteps === 0) return -Infinity; // Blocked on step 1
+
+      // Base score favors deeper lookahead clearance and smaller deflection angle
+      let score = probe.freeSteps * 30 - offsetSteps * 18;
+
+      // Coastal margin bonus keeps the 2x2 hull 1 tile off rocky shores
+      if (probe.hasCoastalBuffer) score += 25;
+
+      // Persistent chirality lock bonus prevents left-right ping-pong oscillation
+      if (this.evasionChirality !== 0 && chirality === this.evasionChirality) {
+        score += 35;
+      }
+
+      // Momentum continuity bonus for maintaining or smoothly turning from lastHeading
+      if (this.lastHeading && hv.dir === this.lastHeading) {
+        score += 20;
+      }
+
+      // Heavy penalty against 180-degree reversal unless it is the only escape
+      if (oppositeDir && hv.dir === oppositeDir) {
+        score -= 120;
+      }
+
+      return score;
+    };
+
+    let bestIdx = -1;
+    let bestScore = -Infinity;
+    let bestChirality: -1 | 0 | 1 = this.evasionChirality;
+
+    // Also evaluate idealIdx in case it still has 1-2 free steps on final approach
+    if (idealProbe.freeSteps >= 1) {
+      bestIdx = idealIdx;
+      bestScore =
+        idealProbe.freeSteps * 30 +
+        (idealProbe.hasCoastalBuffer ? 25 : 0) -
+        (this.evasionChirality !== 0 ? 15 : 0);
+    }
+
+    // Deflection Angle Ceiling: Only search offsets 1 (45 deg) and 2 (90 deg).
+    // Offsets >= 3 turn 135-180 degrees backwards into a loop!
+    for (let offset = 1; offset <= 2; offset++) {
+      const cwIdx = (idealIdx + offset) % 8;
+      const ccwIdx = (idealIdx - offset + 8) % 8;
+
+      const cwScore = scoreCandidate(cwIdx, offset, 1);
+      if (cwScore > bestScore) {
+        bestScore = cwScore;
+        bestIdx = cwIdx;
+        bestChirality = 1;
+      }
+
+      const ccwScore = scoreCandidate(ccwIdx, offset, -1);
+      if (ccwScore > bestScore) {
+        bestScore = ccwScore;
+        bestIdx = ccwIdx;
+        bestChirality = -1;
+      }
+    }
+
+    if (bestIdx === -1) {
+      // Direct and deflected routes up to 90 degrees are blocked; fall back to lastHeading or 45-degree evasion
+      if (this.lastHeading) {
+        const lastHv = COMPASS_ROSE.find((h) => h.dir === this.lastHeading);
+        if (lastHv && this.probeHeadingClearance(currentPos, lastHv, tilemap).freeSteps >= 1) {
+          return this.lastHeading;
+        }
+      }
+      this.evasionChirality = this.evasionChirality === 1 ? -1 : 1;
+      const fallbackOffset = this.evasionChirality === 1 ? 1 : 7;
+      const fallbackIdx = (idealIdx + fallbackOffset) % 8;
+      return COMPASS_ROSE[fallbackIdx].dir;
+    }
+
+    if (bestIdx !== idealIdx && bestChirality !== 0) {
+      this.evasionChirality = bestChirality;
+      this.evasionLockTicks = 6; // Lock handedness for 6 ticks to clear corner without orbiting
+    }
+
+    return COMPASS_ROSE[bestIdx].dir;
+  }
+
+  /**
+   * Overloaded deflection heading method for backwards compatibility with tests and callers.
+   */
+  public getDeflectionHeading(dir: Direction, tick: number): Direction;
+  public getDeflectionHeading(currentPos: Position, target: Position, isFinalApproach?: boolean): Direction | '';
+  public getDeflectionHeading(arg1: any, arg2: any, arg3: boolean = false): any {
+    if (typeof arg1 === 'string') {
+      const directions: Direction[] = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+      const idx = directions.indexOf(arg1 as Direction);
+      if (idx === -1) return arg1;
+      const offset = (arg2 as number) % 2 === 0 ? 1 : -1;
+      const newIdx = (idx + offset + 8) % 8;
+      return directions[newIdx];
+    }
+    return this.computeDeflectionHeading(arg1 as Position, arg2 as Position, arg3);
+  }
+
+  /**
+   * Bounded Local BFS Detour: When stuck in a concave bay or tight archipelago
+   * channel, finds a short 2x2-clear path around the obstacle and injects a bypass
+   * waypoint into `this.course.waypoints`.
+   */
+  private tryInjectLocalBypassWaypoint(startPos: Position, targetPos: Position): boolean {
+    if (!this.course) return false;
+    let tilemap: Uint8Array | null = null;
+    try {
+      tilemap = Assets.data('worldTilemap');
+    } catch {
+      tilemap = null;
+    }
+    if (!tilemap || tilemap.length < WORLD_MAP_COLUMNS * WORLD_MAP_ROWS) {
+      return false;
+    }
+
+    const startX = this.wrapX(Math.round(startPos.x));
+    const startY = this.clampY(Math.round(startPos.y));
+
+    const MAX_RADIUS = 12;
+    const queue: Array<{ x: number; y: number; firstBypass: Position | null; dist: number }> = [
+      { x: startX, y: startY, firstBypass: null, dist: 0 },
+    ];
+    const visited = new Set<string>([`${startX},${startY}`]);
+
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      if (curr.dist > 0) {
+        const currPos = { x: curr.x, y: curr.y };
+        // If this node has clear 2x2 line of sight to the target waypoint, use it!
+        if (
+          this.getToroidalDistance(currPos, targetPos) <
+            this.getToroidalDistance(startPos, targetPos) - 1.5 &&
+          this.hasWaterLineOfSight(currPos, targetPos, 0)
+        ) {
+          const bypassWaypoint = curr.firstBypass ?? currPos;
+          this.course.waypoints.splice(this.course.currentWaypointIndex, 0, bypassWaypoint);
+          return true;
+        }
+      }
+
+      if (curr.dist >= MAX_RADIUS) continue;
+
+      for (const hv of COMPASS_ROSE) {
+        if (!this.canStep2x2(curr.x, curr.y, hv.dx, hv.dy, tilemap)) continue;
+        const nx = this.wrapX(curr.x + hv.dx);
+        const ny = this.clampY(curr.y + hv.dy);
+        const key = `${nx},${ny}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+
+        // Record intermediate turning point ~4 steps out as the injected waypoint
+        const nextBypass =
+          curr.dist + 1 === 4 ? { x: nx, y: ny } : curr.firstBypass;
+        queue.push({ x: nx, y: ny, firstBypass: nextBypass, dist: curr.dist + 1 });
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Verified arrival & docking handler:
+   * Validates `portAdjacentAt` and ensures `dock()` succeeds before announcing safe docking.
+   * If offshore, drops anchor honestly with a guidance alert.
+   */
+  private handleArrival(player: any, arrivalPos: Position): void {
     if (!this.course) return;
 
     const { targetPortId, portName, enterPortOnArrival } = this.course;
@@ -858,39 +1767,73 @@ class AutopilotManager {
     this.course = null;
     state.autopilotCourse = null;
     this.resetStuckState();
+    this.detourRecoveryAttempts = 0;
+    this.lastHeading = '';
+    this.lastPosition = null;
+    player.setHeading('');
 
     if (enterPortOnArrival) {
-      // Direct harbor docking
-      soundManager.playSfx('victory');
-      player.setHeading('');
-      try {
-        dock(currentPos);
-      } catch (err) {
-        // Handled safely in headless/canvas-less test runners
+      // Resolve a guaranteed dockable coordinate within 1 tile if fractional drift occurred
+      const dockPos = this.resolveValidDockPosition(arrivalPos, targetPortId) ?? arrivalPos;
+      const canDock = this.isDockableAtTargetPort(dockPos, targetPortId);
+
+      let dockSucceeded = false;
+      if (canDock) {
+        try {
+          soundManager.playSfx('victory');
+          const result = dock(dockPos);
+          dockSucceeded = result !== false;
+        } catch {
+          dockSucceeded = false;
+        }
       }
 
-      const alert: SeaAlert = {
-        id: generateId(),
-        type: 'info',
-        text: `⚓ DESTINATION REACHED: Fleet has safely docked at ${portName}!`,
-        timestamp: Date.now(),
-      };
-      updateInterface.seaAlert?.(alert);
+      if (dockSucceeded) {
+        const alert: SeaAlert = {
+          id: generateId(),
+          type: 'info',
+          text: `⚓ DESTINATION REACHED: Fleet has safely docked at ${portName}!`,
+          timestamp: Date.now(),
+        };
+        updateInterface.seaAlert?.(alert);
+      } else {
+        // Honest notification if harbor entrance is still out of reach
+        soundManager.playSfx('shipBell');
+        const alert: SeaAlert = {
+          id: generateId(),
+          type: 'warning',
+          text: `⚓ ARRIVED OFFSHORE: Fleet dropped anchor outside ${portName}. Steer into the harbor entrance to dock.`,
+          timestamp: Date.now(),
+        };
+        updateInterface.seaAlert?.(alert);
+      }
     } else {
       // Drop anchor outside port in roadstead (food/water continues consuming normally)
       soundManager.playSfx('shipBell');
-      player.setHeading('');
-
       const alert: SeaAlert = {
         id: generateId(),
         type: 'info',
-        text: `🌊 DESTINATION REACHED: Dropped anchor outside ${portName}. Standing by in roadstead (supplies consuming normally).`,
+        text: `🌊 DESTINATION REACHED: Dropped anchor outside ${portName || 'designated coordinates'}. Standing by in roadstead (supplies consuming normally).`,
         timestamp: Date.now(),
       };
       updateInterface.seaAlert?.(alert);
     }
 
     this.notify();
+  }
+
+  private normalizeAngle(rad: number): number {
+    while (rad > Math.PI) rad -= 2 * Math.PI;
+    while (rad < -Math.PI) rad += 2 * Math.PI;
+    return rad;
+  }
+
+  private getOppositeHeading(dir: Direction | ''): Direction | '' {
+    const opposites: Record<Direction, Direction> = {
+      n: 's', ne: 'sw', e: 'w', se: 'nw',
+      s: 'n', sw: 'ne', w: 'e', nw: 'se',
+    };
+    return dir ? opposites[dir] : '';
   }
 
   /**

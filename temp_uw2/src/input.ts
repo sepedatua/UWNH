@@ -36,6 +36,21 @@ export const directionMap: { [key in Direction | '']: number } = {
   '': 8,
 };
 
+const keyAliasMap: Record<string, Wasd> = {
+  w: 'w',
+  arrowup: 'w',
+  '8': 'w',
+  s: 's',
+  arrowdown: 's',
+  '2': 's',
+  a: 'a',
+  arrowleft: 'a',
+  '4': 'a',
+  d: 'd',
+  arrowright: 'd',
+  '6': 'd',
+};
+
 const isWasd = (key: string): key is Wasd => key in cardinalKeyMap;
 
 let pressedWasd: Wasd[] = [];
@@ -47,20 +62,22 @@ let pressedETimeoutId: number;
 
 const onKeydown = (e: KeyboardEvent) => {
   const pressedKey = e.key.toLowerCase();
+  const normalizedKey = keyAliasMap[pressedKey];
 
-  if (isWasd(pressedKey) && !pressedWasd.includes(pressedKey)) {
-    pressedWasd.unshift(pressedKey);
+  if (normalizedKey && !pressedWasd.includes(normalizedKey)) {
+    pressedWasd.unshift(normalizedKey);
   }
 };
 
 const onKeyup = (e: KeyboardEvent) => {
   const pressedKey = e.key.toLowerCase();
+  const normalizedKey = keyAliasMap[pressedKey];
 
-  if (isWasd(pressedKey)) {
-    pressedWasd = pressedWasd.filter((key) => key !== pressedKey);
+  if (normalizedKey) {
+    pressedWasd = pressedWasd.filter((key) => key !== normalizedKey);
   }
 
-  if (pressedKey === 'e') {
+  if (pressedKey === 'e' || pressedKey === 'enter') {
     pressedE = true;
 
     window.clearTimeout(pressedETimeoutId);
@@ -70,10 +87,15 @@ const onKeyup = (e: KeyboardEvent) => {
   }
 };
 
+const onBlur = () => {
+  Input.reset();
+};
+
 const Input = {
   setup: () => {
     document.addEventListener('keydown', onKeydown);
     document.addEventListener('keyup', onKeyup);
+    window.addEventListener('blur', onBlur);
   },
   getDirection: (options: { includeOrdinal: boolean }): Direction | '' => {
     if (!pressedWasd.length) {
