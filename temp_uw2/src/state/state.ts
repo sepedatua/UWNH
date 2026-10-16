@@ -93,6 +93,8 @@ export interface State {
   waterAccumulator?: number;
   foodAccumulator?: number;
   foragedLocations?: { x: number; y: number; day: number }[];
+  villageFriendship?: Record<string, number>;
+  plunderedVillages?: string[];
   isPaused: boolean;
 }
 
@@ -148,6 +150,8 @@ const state = {
   waterAccumulator: 0,
   foodAccumulator: 0,
   foragedLocations: [],
+  villageFriendship: {},
+  plunderedVillages: [],
   isPaused: false,
   ...savedState,
 } as State;

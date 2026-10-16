@@ -107,6 +107,8 @@ export default function SaveLoadModal({
           dayAtSea: state.dayAtSea,
           exploredSectors: explorationManager.exportBase64(),
           reportedSectors: explorationManager.getReportedCount(),
+          villageFriendship: state.villageFriendship || {},
+          plunderedVillages: state.plunderedVillages || [],
         },
       });
       await loadSlots();
@@ -224,6 +226,12 @@ export default function SaveLoadModal({
       }
       if (payload.reportedSectors !== undefined) {
         explorationManager.setReportedCount(payload.reportedSectors);
+      }
+      if (payload.villageFriendship) {
+        state.villageFriendship = payload.villageFriendship;
+      }
+      if (payload.plunderedVillages) {
+        state.plunderedVillages = payload.plunderedVillages;
       }
       
       const targetPortId = payload.portId || slot.current_port_id || '1';

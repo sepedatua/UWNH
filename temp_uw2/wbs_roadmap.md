@@ -353,7 +353,24 @@
 
 ---
 
+## Milestone 12: World Discoveries & Indigenous Village Settlements (Sprint 13)
+*Goal: Complete implementation of all 98 authentic Koei Uncharted Waters 2 discoveries from COLONY.DAT, 98 persistent coastal indigenous villages, interactive Village Modal (集落画面) with Hospitality/Friendliness mechanics, Feast offerings with luxury goods bonuses, search risks (ambush/monster panic), instant plunder resolution, and full save/load persistence.*
 
+- [x] **Task 12.1: Complete 98 Authentic Koei Discoveries Database (`discoveryData.ts`)** (Completed)
+  - Extracted and compiled all 98 authentic discoveries directly from original DOS `COLONY.DAT` with full lore descriptions, exact geographical coordinates, difficulty ratings (10–100), categories (ruins, monster, flora/fauna, wonder, historic), adventure fame rewards, and cash-in gold values at the Maritime Guild.
+- [x] **Task 12.2: 98 Coastal Indigenous Settlements (`villageData.ts`)** (Completed)
+  - Created declarative database of 98 coastal villages worldwide spanning all 7 authentic regional themes (African Savannah, Amazon Rainforest, Native American, Oceanic Polynesian, Asian Bamboo, Arctic Tundra, European Ancient).
+  - Cylindrical wrap coordinate detection ($2160 \times 1080$ world map) with calibrated longitudes and latitudes.
+- [x] **Task 12.3: Village Simulation Engine (`villageEngine.ts`)** (Completed)
+  - Dynamic Friendship / Hospitality tracking (0% to 100%).
+  - Search risk formula accounting for friendship, difficulty, officer skills, and monster encounters (crew panic/desertion).
+  - Feast & Entertain action: Food (+15%–25%) and Water (+12%–20%), plus luxury cargo hold commodities (Wine, Spices, Velvet, Coral, Glass Beads) granting massive friendship bonuses (+35%–50%).
+  - Instant Plunder resolution: Raids for food, water, and gold coins; Defending warriors inflict sailor casualties; Friendship plunges to 0% (Enraged); Sailor morale drops (-15 Morale, +120 Piracy Fame); Officers voice moral objections.
+  - Rest & Wait: 24-hour cove anchorage advancing time, consuming provisions, and restoring crew fatigue/morale.
+- [x] **Task 12.4: Interactive Village Modal (`VillageModal.tsx`)** (Completed)
+  - High-fidelity 16-bit Koei visual atmosphere with dynamic regional backgrounds, animated friendship gauge, dialogue narrative logs, gift selector, and plunder confirmation drawer.
+- [x] **Task 12.5: Sailing HUD & World Atlas Integration (`SailingHUD.tsx` & `SaveLoadModal.tsx`)** (Completed)
+  - Real-time coastal proximity detector displaying `[★ Indigenous Settlement Sighted! (Press 'V')]` banner with `[V]` hotkey support.
+  - Persistent save/load state serialization for `villageFriendship` and `plunderedVillages` across all save slots. **[PLAYABLE MILESTONE: All 98 authentic Koei discoveries, coastal villages, feast gifts, and tribal diplomacy!]**
 
-
-
+---

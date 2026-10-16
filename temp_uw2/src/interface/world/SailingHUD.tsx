@@ -23,6 +23,8 @@ import soundManager from '../sound/soundManager';
 import { generateId } from '../../utils';
 import CoastalAnchorageModal from './CoastalAnchorageModal';
 import { checkCoastStatus, CoastStatus } from '../../game/world/coastalForageEngine';
+import { Village, getNearbyVillage } from '../../data/villageData';
+import VillageModal from './VillageModal';
 
 export default function SailingHUD() {
   const [nearbyPort, setNearbyPort] = useState<NearbyPortInfo | null>(null);
@@ -40,6 +42,8 @@ export default function SailingHUD() {
   const [isChasedByPirate, setIsChasedByPirate] = useState<boolean>(false);
   const [coastStatus, setCoastStatus] = useState<CoastStatus | null>(null);
   const [showAnchorageModal, setShowAnchorageModal] = useState<boolean>(false);
+  const [nearbyVillage, setNearbyVillage] = useState<Village | null>(null);
+  const [showVillageModal, setShowVillageModal] = useState<boolean>(false);
   const sightedFleetIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -99,6 +103,8 @@ export default function SailingHUD() {
 
       if ((e.key === 'f' || e.key === 'F') && activeDiscovery) {
         handleExplore();
+      } else if ((e.key === 'v' || e.key === 'V') && nearbyVillage) {
+        setShowVillageModal(true);
       } else if ((e.key === 'c' || e.key === 'C') && coastStatus?.isNearCoast) {
         setShowAnchorageModal(true);
       } else if (e.key === 'j' || e.key === 'J') {
@@ -130,6 +136,9 @@ export default function SailingHUD() {
       }
       const nearby = checkExplorationAtPosition(pos.x, pos.y);
       setActiveDiscovery(nearby);
+
+      const village = getNearbyVillage(pos.x, pos.y, 16);
+      setNearbyVillage(village);
 
       const coast = checkCoastStatus(pos);
       setCoastStatus(coast.isNearCoast && !coast.isPort ? coast : null);
@@ -291,8 +300,32 @@ export default function SailingHUD() {
         </div>
       )}
 
-      {/* 2. Proximity Landmark Exploration Banner */}
-      {activeDiscovery && (
+      {/* 2. Proximity Indigenous Village Banner */}
+      {nearbyVillage && !nearbyPort && (
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => setShowVillageModal(true)}
+            className="flex items-center gap-3 px-6 py-3 rounded-xl border-2 border-amber-500 bg-gradient-to-r from-amber-950/95 via-yellow-950/95 to-neutral-900/95 shadow-[0_0_30px_rgba(245,158,11,0.6)] backdrop-blur-md hover:scale-105 transition-all cursor-pointer animate-pulse"
+          >
+            <span className="text-3xl">⛺</span>
+            <div className="text-left">
+              <div className="text-xs uppercase font-bold text-amber-300 tracking-wider">
+                ★ Indigenous Settlement Sighted!
+              </div>
+              <div className="text-lg font-bold text-white">
+                {nearbyVillage.name}
+              </div>
+            </div>
+            <div className="ml-3 px-3 py-1 bg-amber-500/30 text-yellow-300 rounded-lg text-xs font-bold border border-amber-400/60">
+              Press [V] or Click to Enter
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* 2.2 Proximity Landmark Exploration Banner */}
+      {activeDiscovery && !nearbyVillage && !nearbyPort && (
         <div className="absolute top-24 left-1/2 -translate-x-1/2 pointer-events-auto">
           <button
             type="button"
@@ -316,7 +349,7 @@ export default function SailingHUD() {
       )}
 
       {/* 2.5 Proximity Coastal Anchorage / Shore Haven Banner */}
-      {coastStatus?.isNearCoast && !nearbyPort && !activeDiscovery && (
+      {coastStatus?.isNearCoast && !nearbyPort && !activeDiscovery && !nearbyVillage && (
         <div className="absolute top-24 left-1/2 -translate-x-1/2 pointer-events-auto">
           <button
             type="button"
@@ -565,6 +598,13 @@ export default function SailingHUD() {
             </button>
           </div>
         </div>
+      )}
+
+      {showVillageModal && nearbyVillage && (
+        <VillageModal
+          village={nearbyVillage}
+          onClose={() => setShowVillageModal(false)}
+        />
       )}
     </div>
   );
