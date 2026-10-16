@@ -18,6 +18,7 @@ import {
 } from './fogOfWarRenderer';
 import explorationManager from './explorationManager';
 import seaWeather from './seaWeather';
+import state from '../../state/state';
 
 const createWorld = () => {
   const canvas = document.getElementById('camera') as HTMLCanvasElement;
@@ -32,6 +33,10 @@ const createWorld = () => {
 
   return {
     update: () => {
+      if (state.isPaused) {
+        return;
+      }
+
       PercentNextMove.update();
 
       if (PercentNextMove.get() !== 0) {

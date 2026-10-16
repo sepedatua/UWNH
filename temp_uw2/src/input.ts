@@ -1,4 +1,5 @@
 import { CardinalDirection, Direction, OrdinalDirection } from './types';
+import state from './state/state';
 
 type Wasd = 'w' | 'a' | 's' | 'd';
 
@@ -98,6 +99,10 @@ const Input = {
     window.addEventListener('blur', onBlur);
   },
   getDirection: (options: { includeOrdinal: boolean }): Direction | '' => {
+    if (state.isPaused) {
+      return '';
+    }
+
     if (!pressedWasd.length) {
       return '';
     }
@@ -114,7 +119,12 @@ const Input = {
 
     return cardinalKeyMap[pressedWasd[0]];
   },
-  getPressedE: () => pressedE,
+  getPressedE: () => {
+    if (state.isPaused) {
+      return false;
+    }
+    return pressedE;
+  },
   reset: () => {
     pressedWasd = [];
 

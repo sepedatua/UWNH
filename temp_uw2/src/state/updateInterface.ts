@@ -30,6 +30,7 @@ export interface UpdateInterface {
     active: boolean,
     encounter?: { enemyFleetName: string; enemyCommodoreName: string } | null,
   ) => void;
+  isPaused?: (paused: boolean) => void;
 }
 
 

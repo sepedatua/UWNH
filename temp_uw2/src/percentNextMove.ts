@@ -11,4 +11,8 @@ export default {
     }
   },
   get: () => percentNextMove,
+  reset: () => {
+    lastMoveTime = window.performance.now();
+    percentNextMove = 0;
+  },
 };

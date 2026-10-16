@@ -17,6 +17,8 @@ import ErrorBoundary from './ErrorBoundary';
 import SailingHUD from './world/SailingHUD';
 import BattleArena from './combat/BattleArena';
 import { endCombat } from '../state/actionsWorld';
+import PauseOverlay from './common/PauseOverlay';
+import { togglePause, setPaused } from '../state/actionsGame';
 import './global.css';
 
 
@@ -39,6 +41,7 @@ function Interface({ resolve }: Props) {
   const [timePassed, setTimePassed] = useState(0);
   const [gold, setGold] = useState(0);
   const [inCombat, setInCombat] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [combatEncounter, setCombatEncounter] = useState<{
     enemyFleetName: string;
     enemyCommodoreName: string;
@@ -47,7 +50,27 @@ function Interface({ resolve }: Props) {
 
   useEffect(() => {
     resolve();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (e.key === 'Pause' || e.key === 'p' || e.key === 'P') {
+        e.preventDefault();
+        togglePause();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
+
+  updateInterface.isPaused = (paused) => {
+    setIsPaused(paused);
+  };
 
   updateInterface.combat = (active, encounter) => {
     setInCombat(active);
@@ -102,6 +125,7 @@ function Interface({ resolve }: Props) {
             </div>
           )}
           {!inPort && buildingId === null && !inCombat && <SailingHUD />}
+          {isPaused && <PauseOverlay onResume={() => setPaused(false)} />}
         </div>
 
 

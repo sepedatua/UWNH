@@ -442,6 +442,53 @@ class SoundManager {
     );
   }
 
+  private isAudioPaused = false;
+
+  public setPausedAudio(isPaused: boolean) {
+    this.isAudioPaused = isPaused;
+    this.initAudio();
+    this.ensureContextRunning();
+
+    if (this.audioCtx && this.musicGainNode) {
+      const now = this.audioCtx.currentTime;
+      this.musicGainNode.gain.cancelScheduledValues(now);
+      this.musicGainNode.gain.setValueAtTime(this.musicGainNode.gain.value, now);
+
+      if (isPaused) {
+        this.musicGainNode.gain.linearRampToValueAtTime(this.musicVolume * 0.35, now + 0.3);
+
+        if (this.fmFilterNode) {
+          this.fmFilterNode.frequency.cancelScheduledValues(now);
+          this.fmFilterNode.frequency.setValueAtTime(this.fmFilterNode.frequency.value, now);
+          this.fmFilterNode.frequency.linearRampToValueAtTime(1200, now + 0.3);
+        }
+
+        this.synthWaves(this.audioCtx, now);
+      } else {
+        this.musicGainNode.gain.linearRampToValueAtTime(this.musicVolume, now + 0.3);
+
+        if (this.fmFilterNode) {
+          this.fmFilterNode.frequency.cancelScheduledValues(now);
+          this.fmFilterNode.frequency.setValueAtTime(this.fmFilterNode.frequency.value, now);
+          this.fmFilterNode.frequency.linearRampToValueAtTime(
+            this.mode === 'fm_synth' ? 3400 : 20000,
+            now + 0.3,
+          );
+        }
+
+        this.playSfx('click');
+      }
+    }
+
+    if (this.musicAudio) {
+      this.musicAudio.volume = isPaused ? this.musicVolume * 0.35 : this.musicVolume;
+    }
+  }
+
+  public getIsAudioPaused(): boolean {
+    return this.isAudioPaused;
+  }
+
   public subscribe(cb: () => void): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);

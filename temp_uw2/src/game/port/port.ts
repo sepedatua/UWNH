@@ -11,6 +11,7 @@ import {
   getCameraPosition,
 } from '../world/sharedUtils';
 import { TILE_SIZE } from '../../constants';
+import state from '../../state/state';
 
 const createPort = (portId: string) => {
   const canvas = document.getElementById('camera') as HTMLCanvasElement;
@@ -34,6 +35,10 @@ const createPort = (portId: string) => {
 
   return {
     update: () => {
+      if (state.isPaused) {
+        return;
+      }
+
       PercentNextMove.update();
 
       if (PercentNextMove.get() !== 0) {
