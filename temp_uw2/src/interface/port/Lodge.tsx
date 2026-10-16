@@ -130,7 +130,7 @@ export default function Lodge() {
   return (
     <BuildingWrapper
       buildingId="5"
-      vendorMessageBox={vendorMessage}
+      vendorMessageBox={option !== null && !gossipText ? null : vendorMessage}
       menu={menu}
     >
       {children}

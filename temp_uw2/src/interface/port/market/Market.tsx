@@ -566,7 +566,7 @@ export default function Market() {
   return (
     <BuildingWrapper
       buildingId="1"
-      vendorMessageBox={vendorMessage}
+      vendorMessageBox={option !== null && !statusMessage ? null : vendorMessage}
       menu={menu}
     >
       {option === 'Buy Goods' && renderBuyGoods()}

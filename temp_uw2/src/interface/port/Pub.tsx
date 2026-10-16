@@ -149,6 +149,7 @@ export default function Pub() {
         acknowledge: back,
       };
     } else {
+      vendorMessage = null;
       children = (
         <div className="absolute top-[180px] left-[520px] w-[460px] bg-[#1c1814] border-2 border-[#8c6f4b] p-5 text-[#e6d5b8] font-mono shadow-2xl z-30 rounded">
           <div className="flex justify-between items-center border-b border-[#8c6f4b] pb-2 mb-3">
@@ -241,6 +242,7 @@ export default function Pub() {
 
   // 4. GAMBLE (SAILOR DICE MINIGAME)
   if (option === 'Gamble') {
+    vendorMessage = null;
     const diceIcons = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 
     children = (

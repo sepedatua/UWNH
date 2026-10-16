@@ -9,7 +9,6 @@ import {
   MessageBoxes,
   VendorMessageBoxType,
 } from '../quest/getMessageBoxes';
-import Confirm from '../common/Confirm';
 import Acknowledge from '../common/Acknowledge';
 
 interface Props {
@@ -47,9 +46,6 @@ export default function BuildingWrapper(props: Props) {
   const { acknowledge } =
     messageBoxes.find((messageBox) => !!messageBox?.acknowledge) || {};
 
-  const { confirm } =
-    messageBoxes.find((messageBox) => !!messageBox?.confirm) || {};
-
   if (!dark) {
     return (
       <div
@@ -74,16 +70,6 @@ export default function BuildingWrapper(props: Props) {
           <div className="absolute top-[190px] left-[696px]">{menu2}</div>
         )}
         {children}
-        {!!confirm && (
-          <Confirm
-            onYes={confirm.yes}
-            onNo={confirm.no}
-            initialPosition={{
-              x: 760,
-              y: 290,
-            }}
-          />
-        )}
         {!!acknowledge && <Acknowledge onAcknowledge={acknowledge} />}
       </div>
     );
@@ -93,16 +79,6 @@ export default function BuildingWrapper(props: Props) {
     <div className="w-full h-full bg-size-[256px_128px]" data-test="building">
       <CharacterMessageBox messageBox={messageBoxes[2]} position={2} />
       {children}
-      {!!confirm && (
-        <Confirm
-          onYes={confirm.yes}
-          onNo={confirm.no}
-          initialPosition={{
-            x: 760,
-            y: 290,
-          }}
-        />
-      )}
       {!!acknowledge && <Acknowledge onAcknowledge={acknowledge} />}
     </div>
   );

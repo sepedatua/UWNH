@@ -19,10 +19,16 @@ const PARENT_HEIGHT = 800;
 interface Props {
   onYes: () => void;
   onNo: () => void;
-  initialPosition: Position;
+  initialPosition?: Position;
+  isInline?: boolean;
 }
 
-export default function Confirm({ onYes, onNo, initialPosition }: Props) {
+export default function Confirm({
+  onYes,
+  onNo,
+  initialPosition,
+  isInline = false,
+}: Props) {
   const [yesHighlighted, setYesHighlighted] = useState(true);
   const yesOrNoElement = useRef<HTMLDivElement>(null);
   const lastMousePosition = useRef<Position | undefined>(undefined);
@@ -79,7 +85,7 @@ export default function Confirm({ onYes, onNo, initialPosition }: Props) {
   }, [yesHighlighted]);
 
   const onMouseMove = throttle((e: MouseEvent) => {
-    if (!lastMousePosition.current || !yesOrNoElement.current) {
+    if (isInline || !initialPosition || !lastMousePosition.current || !yesOrNoElement.current) {
       return;
     }
 
@@ -127,14 +133,60 @@ export default function Confirm({ onYes, onNo, initialPosition }: Props) {
   };
 
   useEffect(() => {
+    if (isInline || !initialPosition) return undefined;
+
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
 
     return () => {
-      document.addEventListener('mousemove', onMouseMove);
-      document.addEventListener('mouseup', onMouseUp);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
     };
-  }, []);
+  }, [isInline, initialPosition]);
+
+  if (isInline || !initialPosition) {
+    return (
+      <div className="relative inline-block select-none" ref={yesOrNoElement}>
+        <img
+          className="w-72 h-28 pointer-events-none drop-shadow-md"
+          src={
+            yesHighlighted
+              ? Assets.images('dialogYes').toDataURL()
+              : Assets.images('dialogNo').toDataURL()
+          }
+          alt=""
+        />
+        <div
+          className="absolute top-8 left-5 w-[120px] h-16 cursor-pointer"
+          onClick={() => {
+            if (yesHighlighted) {
+              setDelayedValueToSubmit(undefined);
+              onYes();
+            } else {
+              setYesHighlighted(true);
+              setDelayedValueToSubmit(true);
+            }
+          }}
+          role="button"
+          data-test="confirmYes"
+        />
+        <div
+          className="absolute top-8 left-[148px] w-[120px] h-16 cursor-pointer"
+          onClick={() => {
+            if (!yesHighlighted) {
+              setDelayedValueToSubmit(undefined);
+              onNo();
+            } else {
+              setYesHighlighted(false);
+              setDelayedValueToSubmit(false);
+            }
+          }}
+          role="button"
+          data-test="confirmNo"
+        />
+      </div>
+    );
+  }
 
   return (
     <div

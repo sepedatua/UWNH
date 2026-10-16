@@ -252,6 +252,7 @@ export default function Shipyard() {
         body: 'Which ship in yer fleet would ye like to refit and remodel?',
       };
     } else {
+      vendorMessage = null;
       const ship = fleet[remodelShipIndex];
       const template = shipData[ship.id];
       const { capacity, minimumCrew, maximumCrew, maximumGuns } = template;
@@ -412,6 +413,7 @@ export default function Shipyard() {
 
   // 5. INVEST
   if (option === 'Invest') {
+    vendorMessage = null;
     children = (
       <div className="absolute top-[160px] left-[520px] w-[480px] bg-[#1c1814] border-2 border-[#8c6f4b] p-5 text-[#e6d5b8] font-mono shadow-2xl z-30 rounded">
         <div className="flex justify-between items-center border-b border-[#8c6f4b] pb-2 mb-3">
