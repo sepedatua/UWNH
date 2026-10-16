@@ -41,9 +41,13 @@ export const getDaysProvisionsWillLast = () => {
       ship.cargo.find((items) => items.type === 'food')?.quantity || 0;
   });
 
-  return Math.floor(
-    Math.min(totalWater / totalCrew, totalFood / totalCrew) * 10,
-  );
+  if (totalCrew <= 0) return 999;
+  const rationMultiplier = Math.max(0.1, (state.rationRate ?? 100) / 100);
+  const dailyBurnPerCrew = 0.1 * rationMultiplier;
+  const dailyFleetBurn = totalCrew * dailyBurnPerCrew;
+
+  if (dailyFleetBurn <= 0) return 999;
+  return Math.floor(Math.min(totalWater, totalFood) / dailyFleetBurn);
 };
 
 export const getCrewNeeded = () => {

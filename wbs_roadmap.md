@@ -86,6 +86,13 @@
   - Port entrance proximity detection across all 100 regular ports and 30 supply ports with cylindrical wrap tolerance.
   - Interactive Harbor Sighted HUD banner and one-click/keypress `[E]` harbor docking.
   - Seamless transition back into Port Walk mode and day-at-sea reset. **[PLAYABLE MILESTONE: You can sail between Lisbon, Seville, Ceuta, and beyond!]**
+- [x] **Task 3.6: Authentic Koei UW2 Survival Systems — Fractional Sailors, Rations Adjustment, Scurvy Treatment & Coastal Anchorage Operations (Foraging & Field Hull Repairs)** (Completed)
+  - **Fractional Sailors (Precision Accumulator):** Accurate Koei consumption rate ($0.1$ water and $0.1$ food per sailor per day at 100% rations) utilizing running state accumulators (`waterAccumulator`, `foodAccumulator`) so odd crew counts (e.g., 15 crew = 3 barrels every 2 days; 1 crew = 1 barrel every 10 days) deduct without punitive ceiling inflation.
+  - **Rations Adjustment Widget:** Embedded interactive ration selector (20% Emergency to 100% Standard) directly inside the Provisions HUD panel (`Provisions.tsx`) with real-time remaining days calculation and morale consequence indicators.
+  - **Scurvy Threshold & Lime Juice Remedy:** Updated scurvy trigger threshold to 50 consecutive days at sea (`dayAtSea >= 50`); automated administration of Lime Juice (`itemId: '44'`) from inventory to cure outbreaks and protect crew health.
+  - **Coastal Shore Landing Party & Foraging:** Ability to drop anchor along non-port coastlines to organize a 6-hour shore expedition; crew-scaled yields for abundant fresh water, foraged food (small amount), and felled timber (small amount); 4-tile depletion radius (`foragedLocations`) to prevent localized farming.
+  - **Low Cargo Storage Allocation Modal:** Interactive modal granting the captain total control to balance and confirm how much gathered water, food, and lumber to stow into ship holds within available fleet cargo capacity.
+  - **Light Ship Repair on Shore (Careening):** Field emergency hull repair while anchored along calm coastlines; consumes cargo/foraged lumber ($1 \text{ Lumber} = 5 \text{ Durability points}$); capped at an 80% field repair ceiling (full 100% overhaul requires shipyard drydock).
 
 
 ---

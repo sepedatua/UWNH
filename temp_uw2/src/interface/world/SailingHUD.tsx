@@ -21,6 +21,8 @@ import npcFleetManager, { NpcFleetInstance } from '../../game/world/npcFleetMana
 import AtSeaEncounterModal from './AtSeaEncounterModal';
 import soundManager from '../sound/soundManager';
 import { generateId } from '../../utils';
+import CoastalAnchorageModal from './CoastalAnchorageModal';
+import { checkCoastStatus, CoastStatus } from '../../game/world/coastalForageEngine';
 
 export default function SailingHUD() {
   const [nearbyPort, setNearbyPort] = useState<NearbyPortInfo | null>(null);
@@ -36,6 +38,8 @@ export default function SailingHUD() {
   const [closestNpcFleet, setClosestNpcFleet] = useState<NpcFleetInstance | null>(null);
   const [activeEncounterFleet, setActiveEncounterFleet] = useState<NpcFleetInstance | null>(null);
   const [isChasedByPirate, setIsChasedByPirate] = useState<boolean>(false);
+  const [coastStatus, setCoastStatus] = useState<CoastStatus | null>(null);
+  const [showAnchorageModal, setShowAnchorageModal] = useState<boolean>(false);
   const sightedFleetIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -95,6 +99,8 @@ export default function SailingHUD() {
 
       if ((e.key === 'f' || e.key === 'F') && activeDiscovery) {
         handleExplore();
+      } else if ((e.key === 'c' || e.key === 'C') && coastStatus?.isNearCoast) {
+        setShowAnchorageModal(true);
       } else if (e.key === 'j' || e.key === 'J') {
         setShowJournal((prev) => !prev);
       } else if ((e.key === 'h' || e.key === 'H') && closestNpcFleet) {
@@ -110,7 +116,7 @@ export default function SailingHUD() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeDiscovery, interceptFleet, autopilotCourse, closestNpcFleet, handleExplore, handleIntercept]);
+  }, [activeDiscovery, coastStatus, interceptFleet, autopilotCourse, closestNpcFleet, handleExplore, handleIntercept]);
 
   useEffect(() => {
     updateInterface.nearbyPort = (port) => {
@@ -124,6 +130,9 @@ export default function SailingHUD() {
       }
       const nearby = checkExplorationAtPosition(pos.x, pos.y);
       setActiveDiscovery(nearby);
+
+      const coast = checkCoastStatus(pos);
+      setCoastStatus(coast.isNearCoast && !coast.isPort ? coast : null);
 
       // In MP Endless mode, update ghost fleet radar and check for interception
       if (state.gameMode === 'mp_endless') {
@@ -306,6 +315,30 @@ export default function SailingHUD() {
         </div>
       )}
 
+      {/* 2.5 Proximity Coastal Anchorage / Shore Haven Banner */}
+      {coastStatus?.isNearCoast && !nearbyPort && !activeDiscovery && (
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => setShowAnchorageModal(true)}
+            className="flex items-center gap-3 px-6 py-3 rounded-xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-950/95 via-teal-950/95 to-neutral-900/95 shadow-[0_0_30px_rgba(16,185,129,0.5)] backdrop-blur-md hover:scale-105 transition-all cursor-pointer animate-pulse"
+          >
+            <span className="text-3xl">{coastStatus.canForage ? '🌲' : '⚓'}</span>
+            <div className="text-left">
+              <div className="text-xs uppercase font-bold text-emerald-300 tracking-wider">
+                {coastStatus.canForage ? '★ Untamed Coastline Sighted!' : '⚓ Coastal Anchorage (Depleted Shore)'}
+              </div>
+              <div className="text-lg font-bold text-white">
+                {coastStatus.canForage ? 'Send Landing Party & Forage' : 'Field Careening & Hull Repair'}
+              </div>
+            </div>
+            <div className="ml-3 px-3 py-1 bg-emerald-500/30 text-emerald-200 rounded-lg text-xs font-bold border border-emerald-400/60">
+              Press [C] or Click
+            </div>
+          </button>
+        </div>
+      )}
+
       {/* 3. Proximity Ghost Fleet Interception Banner (Task 7.4) */}
       {interceptFleet && (
         <div className="absolute top-44 left-1/2 -translate-x-1/2 pointer-events-auto">
@@ -444,11 +477,26 @@ export default function SailingHUD() {
           </button>
         )}
 
+        {coastStatus?.isNearCoast && (
+          <button
+            type="button"
+            onClick={() => setShowAnchorageModal(true)}
+            className="px-3.5 py-2 bg-emerald-950/90 hover:bg-emerald-900 border border-emerald-500 rounded-lg text-xs font-bold text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.4)] flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105"
+            title="Shore Haven: Drop Anchor for Shore Expedition and Field Hull Repairs [C]"
+          >
+            <span>{coastStatus.canForage ? '🌲' : '⚓'}</span>
+            <span>Shore Haven [C]</span>
+          </button>
+        )}
+
         <div className="bg-neutral-950/80 backdrop-blur-md border border-neutral-800 rounded-lg px-3 py-2 text-[11px] text-neutral-300">
           <div className="flex items-center gap-3">
             <span><strong className="text-yellow-400">WASD</strong> Steer</span>
             <span><strong className="text-yellow-400">E</strong> Dock</span>
             <span><strong className="text-yellow-400">F</strong> Explore</span>
+            {coastStatus?.isNearCoast && (
+              <span><strong className="text-emerald-400">C</strong> Shore Haven</span>
+            )}
             <span><strong className="text-sky-400">M</strong> Atlas</span>
             {closestNpcFleet && (
               <span><strong className="text-yellow-400">H</strong> Hail</span>
@@ -461,6 +509,18 @@ export default function SailingHUD() {
       </div>
 
       {/* Modals */}
+      {showAnchorageModal && coords && (
+        <CoastalAnchorageModal
+          coords={coords}
+          onClose={() => {
+            setShowAnchorageModal(false);
+            if (coords) {
+              const c = checkCoastStatus(coords);
+              setCoastStatus(c.isNearCoast && !c.isPort ? c : null);
+            }
+          }}
+        />
+      )}
       {discoveredLandmark && (
         <DiscoveryModal
           discovery={discoveredLandmark}

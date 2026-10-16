@@ -89,6 +89,10 @@ export interface State {
     totalDistanceLeagues: number;
     estimatedDays: number;
   } | null;
+  rationRate?: number;
+  waterAccumulator?: number;
+  foodAccumulator?: number;
+  foragedLocations?: { x: number; y: number; day: number }[];
 }
 
 
@@ -139,6 +143,10 @@ const state = {
   scenarioChapter: 1,
   completedObjectives: [],
   autopilotCourse: null,
+  rationRate: 100,
+  waterAccumulator: 0,
+  foodAccumulator: 0,
+  foragedLocations: [],
   ...savedState,
 } as State;
 

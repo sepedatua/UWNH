@@ -10,6 +10,7 @@ export interface SurvivalTickResult {
   moraleChange: number;
   casualties: number;
   scurvy: boolean;
+  limeJuiceUsed?: boolean;
   allCrewLost: boolean;
   alert: SeaAlert | null;
 }
@@ -25,6 +26,7 @@ export const processDailySurvival = (): SurvivalTickResult => {
       moraleChange: 0,
       casualties: 0,
       scurvy: false,
+      limeJuiceUsed: false,
       allCrewLost: false,
       alert: null,
     };
@@ -53,14 +55,25 @@ export const processDailySurvival = (): SurvivalTickResult => {
       moraleChange: 0,
       casualties: 0,
       scurvy: false,
+      limeJuiceUsed: false,
       allCrewLost: true,
       alert,
     };
   }
 
-  // 2. Daily ration requirements (1 unit per 10 sailors)
-  const waterNeeded = Math.ceil(totalCrew / 10);
-  const foodNeeded = Math.ceil(totalCrew / 10);
+  // 2. Daily ration requirements (Precision Fractional Accumulator + Rations Adjustment)
+  const rationRate = Math.max(20, Math.min(100, state.rationRate ?? 100));
+  const dailyRationFactor = rationRate / 100;
+
+  // Koei baseline: 0.1 barrels of Water & 0.1 barrels of Food per crew member per day at 100% rations
+  const dailyWaterExact = (totalCrew / 10) * dailyRationFactor;
+  const dailyFoodExact = (totalCrew / 10) * dailyRationFactor;
+
+  state.waterAccumulator = (state.waterAccumulator || 0) + dailyWaterExact;
+  state.foodAccumulator = (state.foodAccumulator || 0) + dailyFoodExact;
+
+  const waterNeeded = Math.floor(state.waterAccumulator);
+  const foodNeeded = Math.floor(state.foodAccumulator);
 
   // 3. Deduct water from ship holds
   let remainingWaterNeeded = waterNeeded;
@@ -75,6 +88,7 @@ export const processDailySurvival = (): SurvivalTickResult => {
       if (remainingWaterNeeded <= 0) break;
     }
   }
+  state.waterAccumulator = Math.max(0, state.waterAccumulator - waterConsumed);
 
   // 4. Deduct food from ship holds
   let remainingFoodNeeded = foodNeeded;
@@ -89,6 +103,7 @@ export const processDailySurvival = (): SurvivalTickResult => {
       if (remainingFoodNeeded <= 0) break;
     }
   }
+  state.foodAccumulator = Math.max(0, state.foodAccumulator - foodConsumed);
 
   // 5. Calculate remaining supplies across fleet
   let remainingTotalWater = 0;
@@ -101,8 +116,8 @@ export const processDailySurvival = (): SurvivalTickResult => {
   }
 
   // 6. Evaluate shortages, morale penalties, and casualties
-  const waterShortage = remainingWaterNeeded > 0;
-  const foodShortage = remainingFoodNeeded > 0;
+  const waterShortage = remainingWaterNeeded > 0 || (remainingTotalWater === 0 && totalCrew > 0);
+  const foodShortage = remainingFoodNeeded > 0 || (remainingTotalFood === 0 && totalCrew > 0);
   let moralePenalty = 0;
   let casualties = 0;
 
@@ -110,22 +125,44 @@ export const processDailySurvival = (): SurvivalTickResult => {
     moralePenalty += 20;
     const thirstCasualties = Math.max(1, Math.ceil(totalCrew * 0.08));
     casualties += thirstCasualties;
+    state.waterAccumulator = 0;
   }
 
   if (foodShortage) {
     moralePenalty += 15;
     const hungerCasualties = Math.max(1, Math.ceil(totalCrew * 0.05));
     casualties += hungerCasualties;
+    state.foodAccumulator = 0;
   }
 
-  // Scurvy check if voyage exceeds 30 consecutive days
+  // Morale penalty for reduced rations
+  if (rationRate < 100 && !waterShortage && !foodShortage) {
+    if (rationRate <= 20) {
+      moralePenalty += 10;
+    } else if (rationRate <= 40) {
+      moralePenalty += 5;
+    } else if (rationRate <= 60) {
+      moralePenalty += 2;
+    } else if (rationRate <= 80) {
+      moralePenalty += 1;
+    }
+  }
+
+  // Scurvy check if voyage exceeds 50 consecutive days at sea without port calls
   let scurvy = false;
-  if (state.dayAtSea >= 30 && !waterShortage && !foodShortage) {
+  let limeJuiceUsed = false;
+  if (state.dayAtSea >= 50 && !waterShortage && !foodShortage) {
     if (Math.random() < 0.25) {
-      scurvy = true;
-      moralePenalty += 8;
-      const scurvyCasualties = Math.max(1, Math.ceil(totalCrew * 0.03));
-      casualties += scurvyCasualties;
+      const limeIndex = (state.items || []).indexOf('44');
+      if (limeIndex >= 0) {
+        state.items.splice(limeIndex, 1);
+        limeJuiceUsed = true;
+      } else {
+        scurvy = true;
+        moralePenalty += 8;
+        const scurvyCasualties = Math.max(1, Math.ceil(totalCrew * 0.03));
+        casualties += scurvyCasualties;
+      }
     }
   }
 
@@ -185,32 +222,41 @@ export const processDailySurvival = (): SurvivalTickResult => {
       text: `🚨 STARVATION CRISIS! Food exhausted! Morale fell to ${state.morale}%. ${casualties} sailors died!`,
       timestamp: Date.now(),
     };
+  } else if (limeJuiceUsed) {
+    alert = {
+      id: generateId(),
+      type: 'info',
+      text: '🍋 SCURVY AVERTED! Ship surgeon administered Lime Juice from your inventory, protecting the crew!',
+      timestamp: Date.now(),
+    };
   } else if (scurvy) {
     alert = {
       id: generateId(),
       type: 'warning',
-      text: `🍋 SCURVY OUTBREAK! Protracted voyage has weakened the crew (-8 Morale, ${casualties} casualties).`,
+      text: `🍋 SCURVY OUTBREAK! Protracted voyage (>50 days) has weakened the crew (-8 Morale, ${casualties} casualties). Procure Lime Juice or make port!`,
       timestamp: Date.now(),
     };
-  } else if (remainingTotalWater <= waterNeeded * 3 && remainingTotalWater > 0) {
+  } else if (remainingTotalWater <= (waterNeeded || 1) * 3 && remainingTotalWater > 0) {
+    const dailyWaterBurnRate = totalCrew * 0.1 * dailyRationFactor;
     alert = {
       id: generateId(),
       type: 'warning',
-      text: `⚠️ LOW WATER: Only ${remainingTotalWater} barrels remaining (${Math.floor(remainingTotalWater / (waterNeeded || 1))} days left)!`,
+      text: `⚠️ LOW WATER: Only ${remainingTotalWater} barrels remaining (${Math.floor(remainingTotalWater / (dailyWaterBurnRate || 1))} days left)!`,
       timestamp: Date.now(),
     };
-  } else if (remainingTotalFood <= foodNeeded * 3 && remainingTotalFood > 0) {
+  } else if (remainingTotalFood <= (foodNeeded || 1) * 3 && remainingTotalFood > 0) {
+    const dailyFoodBurnRate = totalCrew * 0.1 * dailyRationFactor;
     alert = {
       id: generateId(),
       type: 'warning',
-      text: `⚠️ LOW FOOD: Only ${remainingTotalFood} barrels remaining (${Math.floor(remainingTotalFood / (foodNeeded || 1))} days left)!`,
+      text: `⚠️ LOW FOOD: Only ${remainingTotalFood} barrels remaining (${Math.floor(remainingTotalFood / (dailyFoodBurnRate || 1))} days left)!`,
       timestamp: Date.now(),
     };
   } else if (state.dayAtSea % 5 === 0 || state.dayAtSea === 1) {
     alert = {
       id: generateId(),
       type: 'info',
-      text: `🗓️ Day ${state.dayAtSea} at sea: Rations consumed (-${waterConsumed} Water, -${foodConsumed} Food). Morale: ${state.morale}%.`,
+      text: `🗓️ Day ${state.dayAtSea} at sea: Rations consumed (-${waterConsumed} Water, -${foodConsumed} Food${rationRate < 100 ? ` at ${rationRate}% rations` : ''}). Morale: ${state.morale}%.`,
       timestamp: Date.now(),
     };
   }
@@ -227,6 +273,7 @@ export const processDailySurvival = (): SurvivalTickResult => {
     moraleChange: -moralePenalty,
     casualties,
     scurvy,
+    limeJuiceUsed,
     allCrewLost,
     alert,
   };
