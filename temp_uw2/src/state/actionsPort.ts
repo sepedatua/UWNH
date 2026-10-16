@@ -180,6 +180,11 @@ export const exitBuildingIfNotLodge = () => {
 };
 
 export const receiveFirstShip = () => {
+  const fleet = state.fleets['1']?.ships || [];
+  if (fleet.some((s) => s.name === 'Hermes II' || (s.id === '6' && s.name.includes('Hermes')))) {
+    return;
+  }
+
   const id = '6';
 
   const { durability } = shipData[id];
@@ -196,6 +201,10 @@ export const receiveFirstShip = () => {
 };
 
 export const recruitRocco = () => {
+  if (state.mates.some((m) => m.sailorId === '32')) {
+    return;
+  }
+
   state.mates.push({
     sailorId: '32',
     role: null,
@@ -203,6 +212,10 @@ export const recruitRocco = () => {
 };
 
 export const recruitEnrico = () => {
+  if (state.mates.some((m) => m.sailorId === '33')) {
+    return;
+  }
+
   state.mates.push({
     sailorId: '33',
     role: null,
@@ -210,19 +223,15 @@ export const recruitEnrico = () => {
 };
 
 export const assignFirstRoles = () => {
-  if (Number.isNaN(state.mates[1].role)) {
-    state.mates[1].role = 'firstMate';
+  const rocco = state.mates.find((m) => m.sailorId === '32');
+  if (rocco) {
+    rocco.role = 'firstMate';
   }
 
-  if (Number.isNaN(state.mates[2].role)) {
-    state.mates[2].role = 'bookKeeper';
+  const enrico = state.mates.find((m) => m.sailorId === '33');
+  if (enrico) {
+    enrico.role = 'bookKeeper';
   }
-
-  /*
-    In the original game, no check is done before assigning Rocco and Enrico their roles.
-    If you hand them ships, they’ll be assigned First Mate and Bookkeeper while still
-    remaining as captains (allowing them to captain 2 ships each).
-   */
 };
 
 export const deposit = (amount: number) => {

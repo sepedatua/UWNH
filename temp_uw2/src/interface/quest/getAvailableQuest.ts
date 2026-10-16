@@ -22,6 +22,23 @@ const getAvailableQuest = (): QuestId | null => {
     return null;
   }
 
+  // Once the Lisbon prologue concludes (harborFinal completed and João sets sail),
+  // returning to Lisbon must NEVER refire the prologue quest sequence!
+  // Normal facilities (Pub, Shipyard, Market, Item Shop, Church, Harbor, Bank, Lodge, Guild)
+  // return null so they open the standard building menus and gameplay.
+  // The Franco family mansion (8) and Royal Palace (6) remind João of his father's orders.
+  if (finishedQuest('harborFinal')) {
+    if (buildingId === '8') {
+      return 'houseAfterQuestAndPub2';
+    }
+
+    if (buildingId === '6') {
+      return 'palaceAfterQuest';
+    }
+
+    return null;
+  }
+
   if (buildingId === '8') {
     if (!finishedQuest('houseBeforeQuest')) {
       return 'houseBeforeQuest';
@@ -54,7 +71,8 @@ const getAvailableQuest = (): QuestId | null => {
       return 'pubAfterQuest2';
     }
 
-    return 'pubCarlottaGreeting';
+    // Once Mother gives the Tiara, Lisbon Pub opens normally so player can hire crew/drink!
+    return null;
   }
 
   if (['5', '7', '9'].includes(buildingId)) {
@@ -66,11 +84,8 @@ const getAvailableQuest = (): QuestId | null => {
       ]);
     }
 
-    return sample([
-      'lodgeBankGuildAfterQuestRandom1',
-      'lodgeBankGuildAfterQuestRandom2',
-      'lodgeBankGuildAfterQuestRandom3',
-    ]);
+    // Once the initial father conversation has taken place, allow normal facility usage
+    return null;
   }
 
   if (buildingId === '6') {
@@ -90,7 +105,8 @@ const getAvailableQuest = (): QuestId | null => {
       return 'itemShopAfterQuest';
     }
 
-    return 'itemShopAfterQuest2';
+    // Once Marco gives the Rapier, Item Shop opens normally for buying/selling!
+    return null;
   }
 
   if (buildingId === '3') {
@@ -122,7 +138,8 @@ const getAvailableQuest = (): QuestId | null => {
       return 'churchAfterEnrico';
     }
 
-    return 'churchAfterEnricoAfterGift';
+    // Once Enrico has joined and church donation received, Church opens normally!
+    return null;
   }
 
   if (buildingId === '1') {
@@ -165,6 +182,8 @@ const getAvailableQuest = (): QuestId | null => {
     if (!finishedQuest('harborFinal')) {
       return 'harborFinal';
     }
+
+    return null;
   }
 
   return null;

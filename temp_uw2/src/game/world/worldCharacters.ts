@@ -1,6 +1,6 @@
 import Input from '../../input';
 import type { Position } from '../../types';
-import { Map } from '../../map';
+import type { Map as WorldMap } from '../../map';
 import createWorldPlayer from './worldPlayer';
 import createWorldNpc, { WorldNpc } from './worldNpc';
 import state from '../../state/state';
@@ -10,6 +10,8 @@ import { dock } from '../../state/actionsWorld';
 import { getNearbyPort } from '../port/portUtils';
 import updateInterface from '../../state/updateInterface';
 import autopilotManager from './autopilotManager';
+import npcFleetManager from './npcFleetManager';
+import npcFleetAI from './npcFleetAI';
 
 const FRAMES_PER_SHIP = 8;
 const SHIP_VARIANTS = 2;
@@ -20,10 +22,10 @@ export const getStartFrame = (flagship: Ship, isPlayer = false) => {
   return isPlayer ? startFrame : startFrame + FRAMES_PER_SHIP * SHIP_VARIANTS;
 };
 
-const createWorldCharacters = (map: Map) => {
-  const playerFleet = state.fleets[1];
+const createWorldCharacters = (map: WorldMap) => {
+  const playerFleet = state.fleets[1] || state.fleets['1'];
 
-  if (!playerFleet.position) {
+  if (!playerFleet || !playerFleet.position) {
     throw Error('Player fleet has no position');
   }
 
@@ -33,17 +35,38 @@ const createWorldCharacters = (map: Map) => {
     'n',
   );
 
-  const npcs: WorldNpc[] = [];
+  const npcs: Map<string, WorldNpc> = new Map();
 
-  for (let id = 2; id <= Object.keys(state.fleets).length; id += 1) {
-    const { position, ships } = state.fleets[id];
+  const syncNpcEntities = () => {
+    const activeFleets = npcFleetManager.getActiveFleets();
+    const activeIds = new Set(activeFleets.map((f) => f.id));
 
-    if (!position) {
-      throw Error('NPC fleet has no position');
+    // Remove despawned fleets
+    for (const id of npcs.keys()) {
+      if (!activeIds.has(id)) {
+        npcs.delete(id);
+      }
     }
 
-    npcs.push(createWorldNpc(position, getStartFrame(ships[0]), 'n', true));
-  }
+    // Add newly spawned fleets
+    for (const fleet of activeFleets) {
+      if (!npcs.has(fleet.id) && fleet.ships && fleet.ships.length > 0) {
+        npcs.set(
+          fleet.id,
+          createWorldNpc(
+            fleet.position,
+            getStartFrame(fleet.ships[0], false),
+            (fleet.heading as any) || 'n',
+            false,
+          ),
+        );
+      }
+    }
+  };
+
+  // Populate initial regional marine traffic around player
+  npcFleetManager.update(playerFleet.position);
+  syncNpcEntities();
 
   const collision = (position: Position) => map.collisionAt(position);
 
@@ -94,22 +117,36 @@ const createWorldCharacters = (map: Map) => {
         player.move(heading, collision);
       }
 
-      npcs.forEach((npc) => {
+      // Dynamically update regional NPC fleets around current flagship position
+      npcFleetManager.update(currentPos);
+      syncNpcEntities();
+
+      npcs.forEach((npc: WorldNpc, fleetId: string) => {
         npc.update();
 
         if (!npc.shouldMove()) {
           return;
         }
 
-        npc.move();
+        const fleet = npcFleetManager.getFleetById(fleetId);
+        const aiHeading = fleet ? npcFleetAI.updateAndGetHeading(fleet, currentPos) : undefined;
 
-        // if (collision(npc)) {
-        //   npc.undoMove();
-        // }
+        npc.move(aiHeading);
+
+        if (collision(npc.destination())) {
+          npc.undoMove();
+        }
+
+        if (fleet) {
+          fleet.position = npc.position();
+        }
+        if (state.fleets[fleetId]) {
+          state.fleets[fleetId].position = npc.position();
+        }
       });
     },
     player: () => player,
-    npcs: () => npcs,
+    npcs: () => Array.from(npcs.values()),
   };
 };
 

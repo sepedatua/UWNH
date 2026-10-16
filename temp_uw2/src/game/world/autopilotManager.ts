@@ -86,6 +86,8 @@ class AutopilotManager {
   // 0: impassable land, 1: pure open ocean (cost 1.0), 2: coastal/narrow water (cost 6.0)
   private macroGrid: Uint8Array | null = null;
   private lastAlertTime: number = 0;
+  private lastSafetyAlertTime: number = 0;
+  private lastSafetyAlertReason: string | null = null;
   private lastStuckPos: Position | null = null;
   private stuckTicks: number = 0;
   private stagnantTicks: number = 0;
@@ -1129,6 +1131,8 @@ class AutopilotManager {
     this.course.active = false;
     this.course = null;
     state.autopilotCourse = null;
+    this.lastSafetyAlertTime = 0;
+    this.lastSafetyAlertReason = null;
     this.resetStuckState();
 
     const alert: SeaAlert = {
@@ -1184,9 +1188,9 @@ class AutopilotManager {
 
     if (foodDays < 5 || waterDays < 5) {
       return {
-        shouldInterrupt: true,
+        shouldInterrupt: false,
         reason: 'provisions',
-        message: `⚠️ CRITICAL SUPPLIES: Only ${Math.min(foodDays, waterDays)} days of provisions remain! Autopilot halted to avoid starvation at sea.`,
+        message: `⚠️ CRITICAL SUPPLIES: Only ${Math.min(foodDays, waterDays)} days of provisions remain! Restock rations soon to avoid starvation at sea.`,
       };
     }
 
@@ -1205,9 +1209,9 @@ class AutopilotManager {
 
         if (dist <= 10) {
           return {
-            shouldInterrupt: true,
+            shouldInterrupt: false,
             reason: 'corsair',
-            message: `⚔️ UNFRIENDLY SAILS: Sails sighted off the bow (${Math.round(dist)} tiles)! Autopilot halted to prevent ambush.`,
+            message: `⚔️ UNFRIENDLY SAILS: Sails sighted off the bow (${Math.round(dist)} tiles)! Maintaining course with weapons ready.`,
           };
         }
       }
@@ -1216,9 +1220,9 @@ class AutopilotManager {
     // 3. Violent Storm
     if (seaWeather.isStormy()) {
       return {
-        shouldInterrupt: true,
+        shouldInterrupt: false,
         reason: 'storm',
-        message: `⛈️ VIOLENT GALE: Severe storm has struck the fleet! Ship taking heavy seas. Manual steering required.`,
+        message: `⛈️ VIOLENT GALE: Severe storm has struck the fleet! Ship taking heavy seas as the fleet maintains course.`,
       };
     }
 
@@ -1298,13 +1302,29 @@ class AutopilotManager {
       return false;
     }
 
-    // Check emergency interrupts
+    // Check safety alerts (provisions, corsairs, storm) - alert the captain while maintaining autopilot sail
     const interrupt = this.checkSafetyInterrupts();
-    if (interrupt && interrupt.shouldInterrupt) {
-      soundManager.playSfx('shipBell');
-      this.cancelCourse(interrupt.message);
-      player.setHeading('');
-      return false;
+    if (interrupt && interrupt.message) {
+      const now = Date.now();
+      if (now - this.lastSafetyAlertTime > 12000 || this.lastSafetyAlertReason !== interrupt.reason) {
+        this.lastSafetyAlertTime = now;
+        this.lastSafetyAlertReason = interrupt.reason;
+        soundManager.playSfx('shipBell');
+        const alert: SeaAlert = {
+          id: generateId(),
+          type: 'warning',
+          text: interrupt.message,
+          timestamp: now,
+        };
+        updateInterface.seaAlert?.(alert);
+      }
+
+      if (interrupt.shouldInterrupt) {
+        soundManager.playSfx('shipBell');
+        this.cancelCourse(interrupt.message);
+        player.setHeading('');
+        return false;
+      }
     }
 
     const waypoints = this.course.waypoints;

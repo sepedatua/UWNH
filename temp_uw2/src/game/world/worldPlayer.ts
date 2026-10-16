@@ -37,7 +37,7 @@ const createWorldPlayer = (
     speed: 0,
   };
 
-  updateInterface.playerFleetDirection(directionMap[heading]);
+  updateInterface.playerFleetDirection?.(directionMap[heading]);
 
   const windUnchanged = (wind: Velocity) =>
     wind?.direction === lastWind.direction && wind?.speed === lastWind.speed;
@@ -123,7 +123,7 @@ const createWorldPlayer = (
 
       heading = newHeading;
 
-      updateInterface.playerFleetDirection(directionMap[heading]);
+      updateInterface.playerFleetDirection?.(directionMap[heading]);
     },
     heading: () => heading,
     updateSpeed: () => {
@@ -163,7 +163,7 @@ const createWorldPlayer = (
       lastHeading = heading;
       lastWind = state.wind;
       lastCurrent = state.current || { direction: 0, speed: 0 };
-      updateInterface.playerFleetSpeed(speed);
+      updateInterface.playerFleetSpeed?.(speed);
     },
 
     frame: () => startFrame + frameOffset + frameAlternate,

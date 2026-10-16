@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import state from '../../state/state';
 import updateInterface, {
   NearbyPortInfo,
@@ -17,6 +17,10 @@ import explorationManager from '../../game/world/explorationManager';
 import seaWeather from '../../game/world/seaWeather';
 import { calculateSightRadius } from '../../game/world/fogOfWarRenderer';
 import autopilotManager, { AutopilotCourse } from '../../game/world/autopilotManager';
+import npcFleetManager, { NpcFleetInstance } from '../../game/world/npcFleetManager';
+import AtSeaEncounterModal from './AtSeaEncounterModal';
+import soundManager from '../sound/soundManager';
+import { generateId } from '../../utils';
 
 export default function SailingHUD() {
   const [nearbyPort, setNearbyPort] = useState<NearbyPortInfo | null>(null);
@@ -29,6 +33,10 @@ export default function SailingHUD() {
   const [interceptFleet, setInterceptFleet] = useState<GhostFleet | null>(null);
   const [ghostFleetCount, setGhostFleetCount] = useState<number>(0);
   const [autopilotCourse, setAutopilotCourse] = useState<AutopilotCourse | null>(autopilotManager.getCourse());
+  const [closestNpcFleet, setClosestNpcFleet] = useState<NpcFleetInstance | null>(null);
+  const [activeEncounterFleet, setActiveEncounterFleet] = useState<NpcFleetInstance | null>(null);
+  const [isChasedByPirate, setIsChasedByPirate] = useState<boolean>(false);
+  const sightedFleetIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     return autopilotManager.subscribe(() => {
@@ -50,6 +58,37 @@ export default function SailingHUD() {
     triggerCombat(`${interceptFleet.captain_name}’s Fleet`, interceptFleet.captain_name);
   }, [interceptFleet]);
 
+  const handleTossCargoToEvade = useCallback(() => {
+    const playerFleet = state.fleets[1] || state.fleets['1'];
+    if (!playerFleet || !playerFleet.ships[0]) return;
+    const flagship = playerFleet.ships[0];
+    const food = flagship.cargo.find((c) => c.type === 'food');
+    const water = flagship.cargo.find((c) => c.type === 'water');
+
+    if (food && food.quantity >= 10) {
+      food.quantity -= 10;
+    } else if (water && water.quantity >= 10) {
+      water.quantity -= 10;
+    }
+
+    if (coords) {
+      const chasers = npcFleetManager.getNearbyFleets(coords, 25);
+      for (const f of chasers) {
+        if (f.hostile) {
+          f.aiState = 'patrolling';
+        }
+      }
+    }
+    setIsChasedByPirate(false);
+    updateInterface.seaAlert?.({
+      id: generateId(),
+      type: 'info',
+      text: '💨 Jettisoned rations! Pursuing raiders paused to scoop up the floating barrels, allowing your fleet to slip away.',
+      timestamp: Date.now(),
+    });
+    soundManager.playSfx('shipBell');
+  }, [coords]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -58,6 +97,10 @@ export default function SailingHUD() {
         handleExplore();
       } else if (e.key === 'j' || e.key === 'J') {
         setShowJournal((prev) => !prev);
+      } else if ((e.key === 'h' || e.key === 'H') && closestNpcFleet) {
+        setActiveEncounterFleet(closestNpcFleet);
+      } else if ((e.key === 'a' || e.key === 'A') && closestNpcFleet) {
+        triggerCombat(closestNpcFleet.name, closestNpcFleet.captainName);
       } else if ((e.key === 'i' || e.key === 'I') && interceptFleet) {
         handleIntercept();
       } else if ((e.key === 'Escape' || e.key === ' ') && autopilotCourse?.active) {
@@ -67,7 +110,7 @@ export default function SailingHUD() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeDiscovery, interceptFleet, autopilotCourse, handleExplore, handleIntercept]);
+  }, [activeDiscovery, interceptFleet, autopilotCourse, closestNpcFleet, handleExplore, handleIntercept]);
 
   useEffect(() => {
     updateInterface.nearbyPort = (port) => {
@@ -88,6 +131,52 @@ export default function SailingHUD() {
           setInterceptFleet(intercept);
           setGhostFleetCount(ghostFleetManager.getNearbyGhostFleets().length);
         });
+      }
+
+      // 1. Proximity check for nearby NPC fleets (hail / attack range <= 3.5 tiles)
+      const nearbyFleets = npcFleetManager.getNearbyFleets(pos, 3.5);
+      const targetFleet = nearbyFleets.length > 0 ? nearbyFleets[0] : null;
+      setClosestNpcFleet(targetFleet);
+
+      // 2. Check if hostile pirate is actively pursuing in broader vicinity
+      const broaderVicinity = npcFleetManager.getNearbyFleets(pos, 22);
+      const chaser = broaderVicinity.find((f) => f.hostile && f.aiState === 'pursuing');
+      setIsChasedByPirate(!!chaser);
+
+      // 3. Lookout Horizon Sightings (within sight radius ~15 tiles)
+      const sight = calculateSightRadius();
+      for (const fleet of broaderVicinity) {
+        let dx = Math.abs(pos.x - fleet.position.x);
+        if (dx > 1080) dx = 2160 - dx;
+        const dy = Math.abs(pos.y - fleet.position.y);
+        const dist = Math.hypot(dx, dy);
+
+        if (dist <= sight.finalRadiusTiles && !sightedFleetIdsRef.current.has(fleet.id)) {
+          sightedFleetIdsRef.current.add(fleet.id);
+          const bearing = autopilotManager.vectorToDirection(fleet.position.x - pos.x, fleet.position.y - pos.y);
+          soundManager.playSfx('shipBell');
+          updateInterface.seaAlert?.({
+            id: generateId(),
+            type: fleet.hostile ? 'warning' : 'info',
+            text: fleet.hostile
+              ? `⚠️ PIRATE SIGHTED: ${fleet.name} bearing ${bearing.toUpperCase()}! Weapons ready!`
+              : `🔭 Lookouts report: Sail sighted to the ${bearing.toUpperCase()}! A ${fleet.nation} ${fleet.archetype} fleet.`,
+            timestamp: Date.now(),
+          });
+        }
+      }
+
+      // 4. Pirate Ambush (Task 11.5): If hostile pirate closes to <= 1.2 tiles, trigger combat automatically!
+      if (state.portId === null && !state.inCombat) {
+        const ambusher = broaderVicinity.find(
+          (f) =>
+            f.hostile &&
+            Math.hypot(Math.abs(pos.x - f.position.x), Math.abs(pos.y - f.position.y)) <= 1.2,
+        );
+        if (ambusher) {
+          soundManager.playSfx('shipBell');
+          triggerCombat(ambusher.name, ambusher.captainName);
+        }
       }
     };
 
@@ -323,20 +412,47 @@ export default function SailingHUD() {
           <span>📖</span>
           <span>Journal [J]</span>
         </button>
-        <button
-          type="button"
-          onClick={() => triggerCombat('Barbary Corsair Fleet', 'Khayr ad-Din Barbarossa')}
-          className="px-3 py-2 bg-red-950/90 hover:bg-red-900 border border-red-500/80 rounded-lg text-xs font-bold text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.3)] flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105"
-        >
-          <span>⚔️</span>
-          <span>Engage Corsair Fleet</span>
-        </button>
+        {closestNpcFleet && (
+          <>
+            <button
+              type="button"
+              onClick={() => setActiveEncounterFleet(closestNpcFleet)}
+              className="px-3.5 py-2 bg-amber-900/90 hover:bg-amber-800 border border-yellow-500 rounded-lg text-xs font-bold text-yellow-100 shadow-[0_0_15px_rgba(234,179,8,0.4)] flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 animate-pulse"
+            >
+              <span>💬</span>
+              <span>Hail {closestNpcFleet.name} [H]</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => triggerCombat(closestNpcFleet.name, closestNpcFleet.captainName)}
+              className="px-3 py-2 bg-red-950/90 hover:bg-red-900 border border-red-500 rounded-lg text-xs font-bold text-red-200 shadow-md flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105"
+            >
+              <span>⚔️</span>
+              <span>Attack [A]</span>
+            </button>
+          </>
+        )}
+
+        {isChasedByPirate && (
+          <button
+            type="button"
+            onClick={handleTossCargoToEvade}
+            className="px-3 py-2 bg-purple-950/90 hover:bg-purple-900 border border-purple-500 rounded-lg text-xs font-bold text-purple-200 shadow-[0_0_15px_rgba(168,85,247,0.4)] flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 animate-bounce"
+          >
+            <span>💨</span>
+            <span>Toss Cargo to Evade</span>
+          </button>
+        )}
+
         <div className="bg-neutral-950/80 backdrop-blur-md border border-neutral-800 rounded-lg px-3 py-2 text-[11px] text-neutral-300">
           <div className="flex items-center gap-3">
             <span><strong className="text-yellow-400">WASD</strong> Steer</span>
             <span><strong className="text-yellow-400">E</strong> Dock</span>
             <span><strong className="text-yellow-400">F</strong> Explore</span>
             <span><strong className="text-sky-400">M</strong> Atlas</span>
+            {closestNpcFleet && (
+              <span><strong className="text-yellow-400">H</strong> Hail</span>
+            )}
             {state.gameMode === 'mp_endless' && (
               <span><strong className="text-red-400">I</strong> Intercept</span>
             )}
@@ -354,6 +470,13 @@ export default function SailingHUD() {
 
       {showJournal && (
         <ScenarioJournalModal onClose={() => setShowJournal(false)} />
+      )}
+
+      {activeEncounterFleet && (
+        <AtSeaEncounterModal
+          fleet={activeEncounterFleet}
+          onClose={() => setActiveEncounterFleet(null)}
+        />
       )}
 
 

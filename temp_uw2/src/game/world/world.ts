@@ -8,7 +8,6 @@ import {
   drawCamera,
   drawCharacter,
   getCameraPosition,
-  getFromToAccountingForWrapAround,
 } from './sharedUtils';
 import { TILE_SIZE } from '../../constants';
 import {

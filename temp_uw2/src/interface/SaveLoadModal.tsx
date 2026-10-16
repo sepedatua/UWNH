@@ -91,6 +91,20 @@ export default function SaveLoadModal({
           items: state.items,
           mates: state.mates,
           fleets: state.fleets,
+          quests: state.quests || [],
+          scenarioChapter: state.scenarioChapter || 1,
+          completedObjectives: state.completedObjectives || [],
+          discoveries: state.discoveries || [],
+          reportedDiscoveries: state.reportedDiscoveries || [],
+          portInvestments: state.portInvestments || {},
+          marketRates: state.marketRates || {},
+          waitressFavor: state.waitressFavor || {},
+          taxPermit: state.taxPermit || false,
+          cartographyContract: state.cartographyContract || false,
+          nobilityRank: state.nobilityRank || 0,
+          morale: state.morale !== undefined ? state.morale : 80,
+          timePassed: state.timePassed,
+          dayAtSea: state.dayAtSea,
           exploredSectors: explorationManager.exportBase64(),
           reportedSectors: explorationManager.getReportedCount(),
         },
@@ -122,8 +136,89 @@ export default function SaveLoadModal({
       if (payload.gold !== undefined) state.gold = payload.gold;
       if (payload.savings !== undefined) state.savings = payload.savings;
       if (payload.debt !== undefined) state.debt = payload.debt;
-      if (payload.items) state.items = payload.items;
-      if (payload.mates) state.mates = payload.mates;
+
+      if (payload.items) {
+        // Sanitize / deduplicate unique quest items (Aqua Tiara '53' and Rapier '4')
+        const uniqueItems: any[] = [];
+        const seenSingleItems = new Set<string>(['4', '53']);
+        for (const it of payload.items) {
+          if (seenSingleItems.has(it)) {
+            if (!uniqueItems.includes(it)) {
+              uniqueItems.push(it);
+            }
+          } else {
+            uniqueItems.push(it);
+          }
+        }
+        state.items = uniqueItems;
+      }
+
+      if (payload.mates) {
+        // Sanitize / deduplicate mates by sailorId
+        const seenSailors = new Set<string>();
+        state.mates = payload.mates.filter((m: any) => {
+          if (!m || !m.sailorId) return false;
+          if (seenSailors.has(m.sailorId)) return false;
+          seenSailors.add(m.sailorId);
+          return true;
+        });
+      }
+
+      if (payload.fleets) {
+        state.fleets = payload.fleets;
+        // Sanitize duplicate Hermes II ships if any
+        if (state.fleets['1']?.ships) {
+          const ships = state.fleets['1'].ships;
+          let hermesSeen = false;
+          state.fleets['1'].ships = ships.filter((s) => {
+            if (s.name === 'Hermes II' && s.id === '6') {
+              if (hermesSeen) return false;
+              hermesSeen = true;
+            }
+            return true;
+          });
+        }
+      }
+
+      if (payload.quests && Array.isArray(payload.quests)) {
+        state.quests = [...payload.quests];
+      } else {
+        // Migration: If loading an older save that didn't persist quests,
+        // but the captain already has Hermes II or Rocco+Enrico, mark prologue completed!
+        if (
+          slot.protagonist_id === '1' &&
+          (state.mates.some((m) => m.sailorId === '32') ||
+            state.fleets['1']?.ships?.some((s) => s.name === 'Hermes II'))
+        ) {
+          state.quests = [
+            'houseBeforeQuest',
+            'shipyardAfterQuest',
+            'churchAfterQuest',
+            'churchAfterEnrico',
+            'pubAfterQuest',
+            'houseAfterQuestAndPub',
+            'itemShopAfterQuest',
+            'harborFinal',
+          ];
+        } else {
+          state.quests = [];
+        }
+      }
+
+      if (payload.scenarioChapter !== undefined) state.scenarioChapter = payload.scenarioChapter;
+      if (payload.completedObjectives) state.completedObjectives = payload.completedObjectives;
+      if (payload.discoveries) state.discoveries = payload.discoveries;
+      if (payload.reportedDiscoveries) state.reportedDiscoveries = payload.reportedDiscoveries;
+      if (payload.portInvestments) state.portInvestments = payload.portInvestments;
+      if (payload.marketRates) state.marketRates = payload.marketRates;
+      if (payload.waitressFavor) state.waitressFavor = payload.waitressFavor;
+      if (payload.taxPermit !== undefined) state.taxPermit = payload.taxPermit;
+      if (payload.cartographyContract !== undefined) state.cartographyContract = payload.cartographyContract;
+      if (payload.nobilityRank !== undefined) state.nobilityRank = payload.nobilityRank;
+      if (payload.morale !== undefined) state.morale = payload.morale;
+      if (payload.timePassed !== undefined) state.timePassed = payload.timePassed;
+      if (payload.dayAtSea !== undefined) state.dayAtSea = payload.dayAtSea;
+
       if (payload.exploredSectors) {
         explorationManager.importBase64(payload.exploredSectors);
       }
@@ -135,9 +230,6 @@ export default function SaveLoadModal({
       state.portId = targetPortId;
       state.buildingId = null;
 
-      if (payload.fleets) {
-        state.fleets = payload.fleets;
-      }
       if (!state.fleets['1']) {
         state.fleets['1'] = { position: undefined, ships: [] };
       }
@@ -192,8 +284,12 @@ export default function SaveLoadModal({
     // Career ambition adjustments for Endless mode
     const chosenAmbition = AMBITIONS.find((a) => a.id === selectedAmbition) || AMBITIONS[0];
 
+    const isScenarioJoao = newMode === 'sp_scenario' && newProtagonistId === '1';
+
     const startingGold = isCustom 
       ? chosenAmbition.gold 
+      : isScenarioJoao
+      ? 0
       : (newMode === 'sp_scenario' ? chosenProtagonist!.startingGold : Math.max(1000, chosenProtagonist!.startingGold));
     const startingDebt = (newMode === 'sp_scenario' && chosenProtagonist?.id === '5') ? 10000 : 0;
     
@@ -206,8 +302,14 @@ export default function SaveLoadModal({
       ? { ...chosenAmbition.ship, name: `${finalName}'s Pride`, cargo: starterCargo }
       : { ...chosenProtagonist!.startingShip, cargo: starterCargo };
 
+    // In João Franco's canonical scenario, he begins at home in Lisbon with no ship and no first mate.
+    // Rocco and the Hermes II are provided during the Lisbon prologue quests.
+    const startingShips = isScenarioJoao ? [] : [startingShip];
+
     const startingMates = isCustom
       ? [{ sailorId: 'custom', role: null }]
+      : isScenarioJoao
+      ? [{ sailorId: '1', role: null }]
       : chosenProtagonist!.startingMates;
 
     try {
@@ -224,9 +326,12 @@ export default function SaveLoadModal({
         fleets: {
           '1': {
             position: startingPosition,
-            ships: [startingShip],
+            ships: startingShips,
           },
         },
+        quests: [],
+        scenarioChapter: 1,
+        completedObjectives: [],
       };
 
       await api.saveSlot({
@@ -254,6 +359,9 @@ export default function SaveLoadModal({
       state.items = [];
       state.mates = startingMates as any;
       state.fleets = savePayloadData.fleets as any;
+      state.quests = [];
+      state.scenarioChapter = 1;
+      state.completedObjectives = [];
       state.gameMode = newMode;
       state.protagonistId = newProtagonistId;
       state.protagonistName = finalName;
@@ -281,12 +389,14 @@ export default function SaveLoadModal({
           protagonistId: chosenProtagonist.id,
           nationality: chosenProtagonist.nation,
           homePortName: chosenProtagonist.homePortName,
-          shipName: chosenProtagonist.startingShip.name,
-          shipType: chosenProtagonist.startingShip.id === '14' ? 'Sloop' : chosenProtagonist.startingShip.id === '8' ? 'Brigantine' : chosenProtagonist.startingShip.id === '11' ? 'Galleon' : chosenProtagonist.startingShip.id === '4' ? 'Buss' : 'Dhow',
+          shipName: isScenarioJoao ? 'Hermes II' : chosenProtagonist.startingShip.name,
+          shipType: isScenarioJoao ? 'Latin' : (chosenProtagonist.startingShip.id === '14' ? 'Sloop' : chosenProtagonist.startingShip.id === '8' ? 'Brigantine' : chosenProtagonist.startingShip.id === '11' ? 'Galleon' : chosenProtagonist.startingShip.id === '4' ? 'Buss' : 'Dhow'),
           firstMateName: chosenProtagonist.startingMates[1] ? (chosenProtagonist.id === '1' ? 'Rocco Alemkel' : chosenProtagonist.id === '2' ? 'Andreas Baes' : chosenProtagonist.id === '3' ? 'Matthew Baker' : chosenProtagonist.id === '4' ? 'Hans Hucken' : chosenProtagonist.id === '5' ? 'Camilo Stefan' : 'Salim') : 'Chief Officer',
           title: chosenProtagonist.prologueTitle,
           story: chosenProtagonist.prologueStory,
-          objective: chosenProtagonist.objective,
+          objective: isScenarioJoao
+            ? 'Speak to your father Duke Leon Franco at your family estate to begin your voyage preparation.'
+            : chosenProtagonist.objective,
         });
       } else {
         alert(`Maiden voyage commenced! Welcome to ${homePort.name}, Captain ${finalName}!`);

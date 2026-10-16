@@ -55,9 +55,9 @@ const createWorldNpc = (
       movesSkipped += 1;
       return false;
     },
-    move: () => {
+    move: (targetDirection?: Direction) => {
       if (!isStationary) {
-        const direction = randomDirection();
+        const direction = targetDirection || randomDirection();
 
         const {
           xDelta,
@@ -65,8 +65,8 @@ const createWorldNpc = (
           frameOffset: newFrameOffset,
         } = directionToChanges[direction];
         frameOffset = newFrameOffset;
-        xTo = x + xDelta;
-        yTo = y + yDelta;
+        xTo = ((x + xDelta) % 2160 + 2160) % 2160;
+        yTo = Math.max(0, Math.min(1079, y + yDelta));
 
         currentDirection = direction;
         directionWasCollision = false;

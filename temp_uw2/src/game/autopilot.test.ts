@@ -143,11 +143,11 @@ describe('Milestone 10: Port Autopilot Navigation & Maritime Course Plotting', (
     });
   });
 
-  describe('Task 10.3: Safety Auto-Interrupt System', () => {
-    it('triggers safety interrupt when food or water drops below 5 days', () => {
+  describe('Task 10.3: Safety Advisory Alert System (Non-Halt Persistence)', () => {
+    it('triggers safety advisory alert when food or water drops below 5 days without halting autopilot course', () => {
       autopilotManager.setCourse('1', true);
 
-      // Normal supplies (20 days): no interrupt
+      // Normal supplies (20 days): no alert
       let check = autopilotManager.checkSafetyInterrupts();
       expect(check).toBeNull();
 
@@ -159,15 +159,15 @@ describe('Milestone 10: Port Autopilot Navigation & Maritime Course Plotting', (
 
       check = autopilotManager.checkSafetyInterrupts();
       expect(check).not.toBeNull();
-      expect(check?.shouldInterrupt).toBe(true);
+      expect(check?.shouldInterrupt).toBe(false);
       expect(check?.reason).toBe('provisions');
       expect(check?.message).toContain('CRITICAL SUPPLIES');
     });
 
-    it('triggers safety interrupt when hostile sails appear within 10 tiles', () => {
+    it('triggers safety advisory alert when hostile sails appear within 10 tiles without halting autopilot course', () => {
       autopilotManager.setCourse('1', true);
 
-      // Distant pirate at 200 tiles away: no interrupt
+      // Distant pirate at 200 tiles away: no alert
       state.fleets[2] = {
         position: { x: 1040, y: 358 },
         ships: [{ id: '2', name: 'Corsair Galley', crew: 60, cargo: [] }],
@@ -176,29 +176,29 @@ describe('Milestone 10: Port Autopilot Navigation & Maritime Course Plotting', (
       let check = autopilotManager.checkSafetyInterrupts();
       expect(check).toBeNull();
 
-      // Enemy moves within ambush proximity: 6 tiles away (846, 358)
+      // Enemy moves within proximity: 6 tiles away (846, 358)
       state.fleets[2].position = { x: 846, y: 358 };
       check = autopilotManager.checkSafetyInterrupts();
       expect(check).not.toBeNull();
-      expect(check?.shouldInterrupt).toBe(true);
+      expect(check?.shouldInterrupt).toBe(false);
       expect(check?.reason).toBe('corsair');
       expect(check?.message).toContain('UNFRIENDLY SAILS');
     });
 
-    it('triggers safety interrupt when a violent storm strikes', () => {
+    it('triggers safety advisory alert when a violent storm strikes without halting autopilot course', () => {
       autopilotManager.setCourse('1', true);
 
       seaWeather.setWeather('storm', 6);
       const check = autopilotManager.checkSafetyInterrupts();
       expect(check).not.toBeNull();
-      expect(check?.shouldInterrupt).toBe(true);
+      expect(check?.shouldInterrupt).toBe(false);
       expect(check?.reason).toBe('storm');
       expect(check?.message).toContain('VIOLENT GALE');
     });
   });
 
   describe('Task 10.4: Steering & Waypoint Progression', () => {
-    it('steers player flagship towards waypoints and halts safely upon interrupt', () => {
+    it('steers player flagship towards waypoints and maintains course while alerting on low provisions', () => {
       let currentHeading = '';
       const mockPlayer = {
         position: () => ({ x: 840, y: 358 }),
@@ -213,12 +213,16 @@ describe('Milestone 10: Port Autopilot Navigation & Maritime Course Plotting', (
       expect(moved).toBe(true);
       expect(currentHeading).toBeDefined();
 
-      // If low provisions strike, updateSteering disengages and halts
+      // If low provisions strike, updateSteering alerts but maintains course and does not disengage
       state.fleets[1].ships[0].cargo = [{ type: 'food', quantity: 0 }];
-      const movedAfterInterrupt = autopilotManager.updateSteering(mockPlayer);
-      expect(movedAfterInterrupt).toBe(false);
+      const movedAfterAlert = autopilotManager.updateSteering(mockPlayer);
+      expect(movedAfterAlert).toBe(true);
+      expect(autopilotManager.isActive()).toBe(true);
+      expect(currentHeading).not.toBe('');
+
+      // Manual cancellation disengages helm control cleanly
+      autopilotManager.cancelCourse('Manual override');
       expect(autopilotManager.isActive()).toBe(false);
-      expect(currentHeading).toBe('');
     });
   });
 
