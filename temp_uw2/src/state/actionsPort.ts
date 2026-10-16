@@ -262,12 +262,22 @@ export const repay = (amount: number) => {
   updateGeneral();
 };
 
-// TODO implement luck
-export const pray = () => {};
+export const pray = () => {
+  if (state.luck === undefined) state.luck = 80;
+  state.morale = Math.min(100, (state.morale || 80) + 2);
+  updateGeneral();
+};
 
 export const donate = (amount: number) => {
   const percent = (amount / state.gold) * 100;
   state.gold -= amount;
+
+  if (state.luck === undefined) state.luck = 80;
+  if (percent >= 10) {
+    // Generous donation (≥10% of total wealth) boosts luck by 2–4 points up to 100
+    const gain = Math.floor(Math.random() * 3) + 2;
+    state.luck = Math.min(100, state.luck + gain);
+  }
 
   updateGeneral();
 

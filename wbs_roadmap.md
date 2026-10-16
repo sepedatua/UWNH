@@ -59,7 +59,19 @@
   - Waitress interactions and greetings.
 - [x] **Task 2.5: The Lodge, Rest & Time Advancement** (Completed)
   - Full Lodge UI: Check In (Sleep until Morning), Rest until Night (8:00 PM), Port Info, and Traveler Gossip.
-  - Smooth fade-to-black time advancement that updates calendar date and daily healing. **[PLAYABLE MILESTONE: Full trade & provisioning loop inside port!]**
+  - Smooth fade-to-black time advancement that updates calendar date and daily healing.
+- [x] **Task 2.6: The Fortune Teller & Hidden Luck Oracle (Building 12)** (Completed)
+  - Full Fortune Teller UI (`FortuneTeller.tsx`) for 64 global ports utilizing retro crystal ball vendor graphics (`slice('buildings', 11, 136)`).
+  - 4 Authentic Divinations:
+    - **Life (Hidden Luck Oracle):** Reads `state.luck` (0–100) across 5 mystical prophecy brackets (Blessed, Favorable, Normal, Troubled, Cursed). Donating $\ge 10\%$ gold at the Church or Mosque boosts Luck by $+2$ to $+4$ points up to 100.
+    - **Career (Campaign & Promotion Oracle):** Evaluates total Fame against the 9 European Nobility Ranks, advising when an audience awaits at the Royal Palace or suggesting exploration/trade/piracy priorities.
+    - **Love (Waitress Romance & Affinity):** Divines affection levels (`state.waitressFavor`) for the 31 historical tavern barmaids worldwide, revealing favorite gift categories and remote market/pirate intelligence readiness.
+    - **Mates (Officer Roster Loyalty & Astrological Appraisal):** Selectable fleet roster evaluating hidden officer loyalty, morale, and astrological virtues.
+- [x] **Task 2.7: Historical Mansions, Scholarly Tutors & Sponsor Contracts (Building 8)** (Completed)
+  - Replaced `'Misc'` placeholder with full Mansion facility (`Mansion.tsx` and `mansionData.ts`) across all 23 authentic ports utilizing historical manor graphics (`slice('buildings', 7, 136)`).
+  - 23 Authentic Historical Residents: Duchess Christiana Franco (Lisbon), Duke of Medina Sidonia (Seville), Gerardus Mercator (Amsterdam), Diogo Ribeiro (Barcelona), Galileo Galilei (Pisa), Professor Mordecai (Bordeaux), Abraham Ortelius (Antwerp), Tycho Brahe (Copenhagen), Sen no Rikyu (Sakai), Grand Scholar Lin Zexu (Changan), and more.
+  - Scholarly Navigation Tutors: Instruction in *Cartography*, *Celestial Navigation*, *Gunnery*, *Negotiation*, and *Accounting* requiring stat prerequisites (Knowledge, Intuition, Seamanship, Courage, Charm) and gold tuition.
+  - Expedition & Antiquities Desks: In-mansion signing of the Royal Cartography Charter and direct cash-ins of discovery reports and ocean charts for gold and Adventure Fame. **[PLAYABLE MILESTONE: All 12 authentic port buildings fully playable across all 130 ports!]**
 
 ---
 

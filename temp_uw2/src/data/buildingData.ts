@@ -40,8 +40,8 @@ export const buildings: { [key: string]: Building } = {
     options: ['Job Assignment', 'Country Info'],
   },
   '8': {
-    name: 'Misc',
-    options: [],
+    name: 'Mansion',
+    options: ['Meet Resident', 'Learn Skill', 'Expedition Contract'],
   },
   '9': {
     name: 'Bank',

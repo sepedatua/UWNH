@@ -12,6 +12,8 @@ import Pub from './Pub';
 import Market from './market/Market';
 import Palace from './Palace';
 import Guild from './Guild';
+import Mansion from './Mansion';
+import FortuneTeller from './FortuneTeller';
 import { isDay } from '../../state/selectors';
 
 interface Props {
@@ -72,6 +74,10 @@ export default function Building({ buildingId }: Props) {
     return <Guild />;
   }
 
+  if (buildingId === '8') {
+    return <Mansion />;
+  }
+
   if (buildingId === '9') {
     return <Bank />;
   }
@@ -82,6 +88,10 @@ export default function Building({ buildingId }: Props) {
 
   if (buildingId === '11') {
     return <Church />;
+  }
+
+  if (buildingId === '12') {
+    return <FortuneTeller />;
   }
 
   const menu = (

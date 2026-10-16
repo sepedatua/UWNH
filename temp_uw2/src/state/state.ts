@@ -27,9 +27,12 @@ export type Role =
   | 'lookout'
   | null;
 
+import type { SailorSkills } from '../data/sailorData';
+
 type Mate = {
   sailorId: string;
   role: Role;
+  skills?: SailorSkills[];
 };
 
 export interface State {
@@ -95,6 +98,7 @@ export interface State {
   foragedLocations?: { x: number; y: number; day: number }[];
   villageFriendship?: Record<string, number>;
   plunderedVillages?: string[];
+  luck?: number;
   isPaused: boolean;
 }
 
@@ -152,6 +156,7 @@ const state = {
   foragedLocations: [],
   villageFriendship: {},
   plunderedVillages: [],
+  luck: 80,
   isPaused: false,
   ...savedState,
 } as State;

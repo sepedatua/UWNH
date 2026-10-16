@@ -122,10 +122,14 @@ export const getPlayerItems = () =>
 export const getPlayerItem = (i: number) => itemData[state.items[i]];
 
 export const getMates = () =>
-  state.mates.map((mate) => ({
-    ...mate,
-    ...getSailor(mate.sailorId),
-  }));
+  state.mates.map((mate) => {
+    const sailor = getSailor(mate.sailorId);
+    return {
+      ...sailor,
+      ...mate,
+      skills: Array.from(new Set([...(sailor.skills || []), ...(mate.skills || [])])),
+    };
+  });
 
 export const getCaptain = (shipI: number) => {
   const mate =
@@ -139,7 +143,11 @@ export const getCaptain = (shipI: number) => {
     throw Error('No captain was found for the provided ship');
   }
 
-  return getSailor(mate.sailorId);
+  const sailor = getSailor(mate.sailorId);
+  return {
+    ...sailor,
+    skills: Array.from(new Set([...(sailor.skills || []), ...(mate.skills || [])])),
+  };
 };
 
 export const getRoleDisplay = (role: Role) => {
