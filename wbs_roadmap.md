@@ -251,7 +251,7 @@
 ---
 
 ## Milestone 10: Port Autopilot Navigation & Maritime Course Plotting (Sprint 11)
-*Goal: Interactive port course plotting on the [M] World Atlas, dynamic Macro-Grid A* nautical pathfinding with cylindrical X-wrap, arrival action toggles (direct harbor docking vs anchoring in roadstead), full safety auto-interrupts (low provisions, corsairs, storms), and real-time Sailing HUD navigation status.*
+*Goal: Interactive port course plotting on the [M] World Atlas, dynamic Macro-Grid A* nautical pathfinding with cylindrical X-wrap, arrival action toggles (direct harbor docking vs anchoring in roadstead), persistent safety advisory alerts (low provisions, corsairs, storms) without halting the helm, and real-time Sailing HUD navigation status.*
 
 - [x] **Task 10.1: Macro-Grid A* Nautical Pathfinding Engine (`autopilotManager.ts`)** (Completed)
   - Implemented a 216x108 obstacle-free sea macro grid (10x10 tiles per cell, 23,328 nodes) with <3ms path solving.
@@ -261,13 +261,13 @@
   - Clickable revealed/visited port pins on the 1080x540 World Atlas canvas with distance and voyage day estimates.
   - Vintage Renaissance Course Plotting Card modal with arrival mode toggle: `⚓ Enter Port Directly` (auto-dock into harbor) vs `🌊 Stay in Port Ocean` (drop anchor in roadstead outside port; food/water consumed normally).
   - Visual plotted golden dashed nautical route line drawn across the World Atlas map.
-- [x] **Task 10.3: Autopilot Steer Loop, Simulation & Safety Auto-Interrupts (`worldCharacters.ts` & `autopilotManager.ts`)** (Completed)
+- [x] **Task 10.3: Autopilot Steer Loop, Simulation & Safety Advisory Alerts (`worldCharacters.ts` & `autopilotManager.ts`)** (Completed)
   - Steers flagship along plotted waypoints with natural time ticks, wind/current interactions, and Fog of War tile reveals.
-  - Safety auto-interrupt: pauses autopilot and sounds alarm when supplies are critical (<5 days food/water), hostile corsairs are within 10 tiles, or sudden storms strike.
+  - Safety Advisory Alerts (Non-Halt Persistence): Sounds ship's bell alarm and presents prominent HUD warnings when supplies are critical (<5 days food/water), hostile corsairs are within 10 tiles, or sudden storms strike, while allowing autopilot to persistently maintain its course without stopping.
   - Instant manual helm override: tapping directional keys (W/A/S/D/Arrows) or Esc immediately cancels autopilot without penalty.
 - [x] **Task 10.4: Sailing HUD Navigation Status Banner & Audio Feedback (`SailingHUD.tsx`)** (Completed)
   - Real-time navigation banner showing destination port, arrival mode, distance remaining, and `[⏹️ Disengage Helm]` button.
-  - Audio cues: Watch bell chime upon course engagement, safety interrupt alarm, and arrival fanfare.
+  - Audio cues: Watch bell chime upon course engagement, safety advisory alarm, and arrival fanfare.
 - [x] **Task 10.5: Single-Instance Modal Architecture, Port Enforcement & Interactive World Map Zoom/Pan** (Completed)
   - Single Source of Truth: Consolidated `<WorldAtlasModal>` strictly to `TopBar.tsx`, eliminating duplicate modal stacks and dual 'M' listener ping-ponging.
   - Harbor/Sea Status Enforcement: Autopilot is strictly disabled when docked in port (`state.portId !== null`), with clear UI warnings and disabled course engagement button.
@@ -337,35 +337,31 @@
     - Maintains 4–8 active NPC fleets in the player's active oceanic basin (radius ~150–200 tiles) with seamless despawn/recycle as the player voyages into new regions.
     - Dynamically synchronizes active fleets with `state.fleets` (`fleets['2']`, `fleets['3']`, etc.).
 
-- [ ] **Task 11.2: Autonomous Trade Route & Patrol AI Navigation (`npcFleetAI.ts` / `worldCharacters.ts`)**
-  - Point-to-Point Commercial Routes: Assigns authentic trade routes between real regional ports using `autopilotManager.findPath()` (e.g. Sunda ⇄ Malacca, Lisbon ⇄ Seville, Havana ⇄ Veracruz).
-  - Merchant AI: Plots A* course between origin and destination ports; upon arrival at harbor entrance, simulates trading, resets cargo, and sets sail on return or onward leg.
-  - Pirate & Patrol AI State Machine:
-    1. *Cruising / Patrol*: Patrolling regional choke points (straits, cape passages, port approaches).
-    2. *Sighting & Stalking*: When player or merchant fleet enters visual detection radius ($\sim 15$ tiles), alters heading to pursue and intercept.
-    3. *Fleeing*: Outmatched or heavily damaged fleets tack into favorable winds to escape.
+- [x] **Task 11.2: Autonomous Trade Route & Patrol AI Navigation (`npcFleetAI.ts` / `worldCharacters.ts`)** (Completed)
+  - Commercial Route Guidance: Guides regional merchant fleets between authentic historical port pairs using macro-grid corridor pathfinding and vector waypoint tracking.
+  - Harbor Arrival & Turnaround: Automatically detects arrival within $\le 3.5$ tiles of destination harbor, simulates commercial port calls, flips destination index ($0 \leftrightarrow 1$), and replots returning or continuing voyage.
+  - Pirate & Predator AI State Machine:
+    1. *Patrolling*: Prowls choke points and open sea corridors.
+    2. *Pursuing*: Automatically detects player flagship within `PURSUIT_RADIUS = 18` tiles, transitions to `pursuing`, and steers directly toward player coordinates.
+    3. *Abort & Recovery*: If player escapes $> 28$ tiles away (`PURSUIT_ABORT_RADIUS`), drops pursuit and resumes normal patrol.
+  - Cylindrical Toroidal Seam Wrap: Vector calculations wrap seamlessly across $x = 0 \leftrightarrow 2160$, preventing infinite boundary wall-bumping.
 
-- [ ] **Task 11.3: Real-Time Viewport Rendering & Lookouts (`world.ts` & `worldCharacters.ts`)**
-  - Populate `characters.npcs()` with live `WorldNpc` instances matching active `state.fleets`.
-  - Draw authentic NPC flagship sprites from `worldShips.png` using national sail variants, hull models (Caravel, Galleon, Nao, Junk, Dhow, Galleass), and 8-directional rotation.
-  - Respect Fog of War line of sight: NPC ships stay hidden under the shroud until illuminated by the flagship's crow's nest lookout.
-  - Crow's Nest Lookout Announcements: When an NPC sail first enters the visual horizon, display a floating marine banner / toast: *"Sail sighted to the East! A Dutch Merchant Convoy bearing Northwest."*
+- [x] **Task 11.3: Real-Time Viewport Rendering & Lookouts (`world.ts` & `worldCharacters.ts`)** (Completed)
+  - Dynamic NPC Entity Reconciliation: `syncNpcEntities()` dynamically reconciles `state.fleets` with `characters.npcs()`, cleanly spawning and despawning `WorldNpc` ship entities without canvas reload.
+  - Line of Sight Fog-of-War Integration: Renders authentic 8-directional `worldShips.png` vessel sprites, strictly respecting Fog of War line-of-sight checks (`isEntityWithinLineOfSight`) so ships remain hidden under uncharted shroud until illuminated.
+  - Crow's Nest Lookout Announcements: When an NPC sail first crosses the visual horizon, triggers an audible ship's bell chime and displays a floating marine banner with relative compass bearing (e.g. *"🔭 Lookouts report: Sail sighted to the EAST! A Spanish merchant fleet."* or *"⚠️ PIRATE SIGHTED: Malacca Strait Raider bearing SOUTHWEST! Weapons ready!"*).
 
-- [ ] **Task 11.4: Interactive At-Sea Encounters — Hail, Trade Rumors & Privateering (`AtSeaEncounterModal.tsx` & `SailingHUD.tsx`)**
-  - Proximity action prompt when the player flagship is within 2 tiles of an NPC fleet:
-    `[💬 Hail Fleet (H)]` and `[⚔️ Attack / Privateer (A)]`.
-  - **Hail & Parley Modal**:
-    - Dialog interface displaying NPC Captain portrait, name, nationality, and fleet strength.
-    - **Trade Gossip & Market Intelligence**: Captains share real-time price trend rumors (e.g. *"Spices are commanding a fortune in Lisbon right now!"* or *"The Market in Malacca is flooded with silk."*).
-    - **Naval Intelligence**: Warnings of nearby storms or corsair sightings.
-  - **Attack & Privateering Engagement**:
-    - Pressing `[A]` or choosing "Attack" opens the combat system, passing the NPC fleet composition, commodore stats, and cargo hold into the existing tactical hex arena (`BattleArena.tsx`) and sword duel engine (`SwordDuelModal.tsx`).
-    - Loot & Booty: Defeating a merchant fleet grants plunder of their regional cargo commodities, gold coins, and increases Piracy Fame while decreasing national diplomacy standing.
+- [x] **Task 11.4: Interactive At-Sea Encounters — Hail, Trade Rumors & Privateering (`AtSeaEncounterModal.tsx` & `SailingHUD.tsx`)** (Completed)
+  - Proximity Hailing Prompt: Automatically detects nearby NPC fleets within $\le 3.5$ tiles and renders `[💬 Hail Fleet (H)]` and `[⚔️ Attack (A)]` action controls.
+  - Interactive At-Sea Parley Modal (`AtSeaEncounterModal.tsx`):
+    - Displays captain portrait, flagship type, crew complement, and national allegiance flags.
+    - Dialog bubble with regional rumors, historical trade trends, and market gossip.
+    - **Inquire Trade Gossip**: Unlocks captain's trade secret revealing regional cargo commodities and foreign port arbitrage profit multipliers.
+    - **Attack & Privateering Engagement**: Choosing "Attack" seamlessly engages the tactical hex grid arena (`BattleArena.tsx`) and sword duel engine (`SwordDuelModal.tsx`).
 
-- [ ] **Task 11.5: Pirate Ambush & Evasion Gameplay**
-  - Aggressive pirate fleets (e.g., Barbary Corsairs in the Med or Malacca Strait raiders in SE Asia) initiate pursuit when the player is sighted.
-  - If intercepted by a hostile pirate, triggers combat engagement automatically.
-  - Evasion tactics: Player can utilize wind direction and sail rigging (square vs lateen sails) to out-tack the pirate, or jettison cargo (`[Toss Cargo]`) to distract greedy raiders and escape. **[PLAYABLE MILESTONE: Authentic living oceans with regional merchant convoys, prowling pirates, interactive hails, and dynamic sea battles!]**
+- [x] **Task 11.5: Pirate Ambush & Evasion Gameplay** (Completed)
+  - Close-Quarters Ambush Interception: If a hostile pirate fleet closes to $\le 1.2$ tiles of the player flagship, triggers immediate combat ambush with ship's bell alarm.
+  - Cargo Toss Evasion (`[💨 Toss Cargo to Evade]`): When actively pursued by corsairs, player can jettison 10 units of food or water; raiders pause to loot the floating provisions, resetting their AI state to `patrolling` and allowing player to slip away. **[PLAYABLE MILESTONE: Living ocean ecosystems with autonomous merchant trade routes, patrolling corsairs, visual lookout banners, parley dialogs, and dynamic sea combat!]**
 
 ---
 
@@ -416,9 +412,4 @@
   - Accessible both docked in port and underway on the high seas via Left HUD Popover.
   - Rendered green village settlement pins and Lookout duty percentage badge on `[M]` World Atlas.
   - Full save/load persistence for `crewAssignment`, `discoveredVillages`, and `discoveredSupplyPorts`. **[PLAYABLE MILESTONE: Authentic Koei Lookout proximity detection, pulsing green village squares, +50 discovery fame, and crew duty allocation!]**
-
-
-
-
-
 
