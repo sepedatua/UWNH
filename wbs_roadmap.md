@@ -389,8 +389,34 @@
   - Real-time coastal proximity detector displaying `[★ Indigenous Settlement Sighted! (Press 'V')]` banner with `[V]` hotkey support.
   - Persistent save/load state serialization for `villageFriendship` and `plunderedVillages` across all save slots. **[PLAYABLE MILESTONE: All 98 authentic Koei discoveries, coastal villages, feast gifts, and tribal diplomacy!]**
 
-
 ---
+
+## Milestone 13: Crow’s Nest Lookout, Proximity Detection & Crew Duty Allocation (Sprint 14)
+*Goal: Authentic Koei Uncharted Waters 2 Lookout mechanics acting as the core proximity detector for discovering uncharted supply ports, towns, and hidden villages; SNES/Genesis flashing green square markers on the sea viewport canvas; first-time discovery sighting fanfare with +50 Adventure Fame; and interactive 3-way Assign Crew duty sliders (Navigation %, Lookout %, Combat %).*
+
+- [x] **Task 13.1: Crew Duty Allocation Engine & Classic Presets (`actionsCrew.ts`)** (Completed)
+  - Interactive 3-way duty allocation (Navigation %, Lookout %, Combat %) normalized to 100%.
+  - 4 Authentic Koei Presets: Swift Voyage (80/20/0), Uncharted Exploration (50/40/10), Battle Stations (40/10/50), and Balanced Standard (60/20/20).
+  - Live flagship headcount calculation vs minimum crew requirements, flagging speed penalties when navigation crew is understaffed.
+- [x] **Task 13.2: Dynamic Lookout Sight Horizon & Navigation Speed Scaling (`fogOfWarRenderer.ts` & `shipSpeed.ts`)** (Completed)
+  - Integrated crew Lookout duty % into `calculateSightRadius()`: 20% baseline (1.0x), 0% blind penalty (0.5x), 40% explorer boost (1.5x).
+  - Stacks with Chief Lookout officer stats (+15% to +50%), Brass Telescope (+30%), and day/night/fog modifiers.
+  - Linked Navigation duty % into `getShipSpeed()`, proportionally throttling vessel velocity if active navigation sailors fall below the hull's minimum crew requirement.
+- [x] **Task 13.3: Crow's Nest Horizon Detection & Discovery Engine (`lookoutEngine.ts` & `SailingHUD.tsx`)** (Completed)
+  - Real-time cylindrical horizon scanning for all 98 indigenous villages, 30 supply ports, and coastal towns.
+  - Sighting announcements with 8-directional compass bearings (N, NE, E, SE, S, SW, W, NW) and ship's watch bell chime.
+  - First-time discovery awards: authentic +50 Adventure Fame for uncharted indigenous villages and +30 Adventure Fame for supply havens.
+  - Calibrated landing proximity (<= 4 tiles) for initiating shore party landings via `[V]`.
+- [x] **Task 13.4: Authentic 16-Bit Flashing Green Square on Sea Canvas (`villageMarkerRenderer.ts` & `world.ts`)** (Completed)
+  - Rendered pulsing 16-bit emerald/lime green square tiles directly at village world coordinates on the high seas viewport when sighted or charted.
+  - Stepped high-contrast borders with retro crosshair corner accents and center thatched hut glyph (`⛺`).
+  - Proximity floating parchment banner displaying village name when flagship is within 7 tiles.
+- [x] **Task 13.5: Fleet & Crew Management UI & Atlas Integration (`Fleet.tsx`, `Left.tsx`, `WorldAtlasModal.tsx`, `SaveLoadModal.tsx`)** (Completed)
+  - Interactive Fleet Roster with interactive 3-way balancing sliders, duty headcounts, and preset buttons.
+  - Accessible both docked in port and underway on the high seas via Left HUD Popover.
+  - Rendered green village settlement pins and Lookout duty percentage badge on `[M]` World Atlas.
+  - Full save/load persistence for `crewAssignment`, `discoveredVillages`, and `discoveredSupplyPorts`. **[PLAYABLE MILESTONE: Authentic Koei Lookout proximity detection, pulsing green village squares, +50 discovery fame, and crew duty allocation!]**
+
 
 
 

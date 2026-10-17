@@ -16,6 +16,7 @@ import {
   renderFogOfWarTiles,
   renderHeavyFogMistOverlay,
 } from './fogOfWarRenderer';
+import { renderVillageMarkers } from './villageMarkerRenderer';
 import explorationManager from './explorationManager';
 import seaWeather from './seaWeather';
 import state from '../../state/state';
@@ -77,6 +78,16 @@ const createWorld = () => {
       renderFogOfWarTiles(
         context,
         { ...camera, width, height },
+        canvas.width,
+        canvas.height,
+      );
+
+      // 2.5 Render authentic 16-bit flashing green square markers on sighted/charted indigenous villages
+      renderVillageMarkers(
+        context,
+        { ...camera, width, height },
+        playerPos,
+        sight.finalRadiusTiles,
         canvas.width,
         canvas.height,
       );

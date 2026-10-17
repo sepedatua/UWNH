@@ -25,6 +25,7 @@ import CoastalAnchorageModal from './CoastalAnchorageModal';
 import { checkCoastStatus, CoastStatus } from '../../game/world/coastalForageEngine';
 import { Village, getNearbyVillage } from '../../data/villageData';
 import VillageModal from './VillageModal';
+import { checkLookoutSightings } from '../../game/discovery/lookoutEngine';
 
 export default function SailingHUD() {
   const [nearbyPort, setNearbyPort] = useState<NearbyPortInfo | null>(null);
@@ -137,8 +138,19 @@ export default function SailingHUD() {
       const nearby = checkExplorationAtPosition(pos.x, pos.y);
       setActiveDiscovery(nearby);
 
-      const village = getNearbyVillage(pos.x, pos.y, 16);
-      setNearbyVillage(village);
+      // Crow's Nest Lookout Sightings (Villages, Supply Havens & Discovery Events)
+      const sightings = checkLookoutSightings(pos);
+      setNearbyVillage(sightings.nearbyLandingVillage);
+
+      for (const discovery of sightings.newDiscoveries) {
+        soundManager.playSfx('shipBell');
+        updateInterface.seaAlert?.({
+          id: generateId(),
+          type: 'info',
+          text: discovery.message,
+          timestamp: Date.now(),
+        });
+      }
 
       const coast = checkCoastStatus(pos);
       setCoastStatus(coast.isNearCoast && !coast.isPort ? coast : null);

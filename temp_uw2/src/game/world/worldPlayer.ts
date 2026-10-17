@@ -149,6 +149,7 @@ const createWorldPlayer = (
         }
       }
 
+      const navPercent = (state.crewAssignment?.navigation ?? 100) / 100;
       speed = heading
         ? getShipSpeed(
             ship || ({ id: '1' } as any),
@@ -156,6 +157,7 @@ const createWorldPlayer = (
             directionMap[heading],
             state.wind,
             state.current,
+            navPercent,
           )
         : 0;
 

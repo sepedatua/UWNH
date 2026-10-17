@@ -43,6 +43,7 @@ const getShipSpeed = (
   heading: number,
   wind: Velocity,
   current?: Velocity,
+  navCrewRatio: number = 1.0,
 ) => {
   const { power, tacking, sailType, minimumCrew, capacity } = shipData[ship.id];
   const directionDelta = getHeadingWindDelta(heading, wind.direction);
@@ -58,8 +59,8 @@ const getShipSpeed = (
 
   const { crew } = ship;
 
-  // in the absence of game features, we’ll assume the entire crew is assigned to navigation
-  const navCrew = crew;
+  // Active navigation duty allocation (from crew duty ratio, default 1.0)
+  const navCrew = crew * navCrewRatio;
   const navigationCrewFactor = Math.min(1, navCrew / minimumCrew);
 
   const capacityUsed =

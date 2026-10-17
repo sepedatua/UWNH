@@ -8,6 +8,7 @@ import explorationManager, {
 import { calculateSightRadius } from '../../game/world/fogOfWarRenderer';
 import { regularPorts, supplyPorts } from '../../data/portData';
 import { discoveries } from '../../data/discoveryData';
+import { villages } from '../../data/villageData';
 import { XMarkIcon, EyeIcon } from '@heroicons/react/24/solid';
 import autopilotManager, { AutopilotCourse } from '../../game/world/autopilotManager';
 import { positionAdjacentToPort } from '../../state/selectors';
@@ -255,6 +256,33 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
           ctx.lineWidth = 2.0;
           ctx.strokeText(disc.name, px + 5, py + 3);
           ctx.fillText(disc.name, px + 5, py + 3);
+        }
+      });
+    }
+
+    // 5.5 Render Discovered Indigenous Villages
+    if (state.discoveredVillages && state.discoveredVillages.length > 0) {
+      villages.forEach((vil) => {
+        if (!state.discoveredVillages?.includes(vil.id)) return;
+
+        const px = (vil.position.x / 2160) * width;
+        const py = (vil.position.y / 1080) * height;
+
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.arc(px, py, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+
+        if (zoom >= 1.75) {
+          ctx.font = 'bold 8px Georgia, serif';
+          ctx.fillStyle = '#86efac';
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+          ctx.lineWidth = 2.0;
+          ctx.strokeText(`⛺ ${vil.name}`, px + 5, py + 3);
+          ctx.fillText(`⛺ ${vil.name}`, px + 5, py + 3);
         }
       });
     }
@@ -820,6 +848,12 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
                 {sightBreakdown.finalRadiusTiles} Tiles
               </span>
             </div>
+
+            <span className="px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-600/70 text-emerald-300 font-semibold">
+              🔭 Duty: {sightBreakdown.crewLookoutPercent}% Watch (
+              {sightBreakdown.crewLookoutFactor >= 1.0 ? '+' : ''}
+              {Math.round((sightBreakdown.crewLookoutFactor - 1) * 100)}%)
+            </span>
 
             {sightBreakdown.lookoutBonus > 0 && (
               <span className="px-1.5 py-0.5 rounded bg-blue-950/80 border border-blue-600/70 text-blue-300 font-semibold">

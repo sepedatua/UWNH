@@ -109,6 +109,9 @@ export default function SaveLoadModal({
           reportedSectors: explorationManager.getReportedCount(),
           villageFriendship: state.villageFriendship || {},
           plunderedVillages: state.plunderedVillages || [],
+          discoveredVillages: state.discoveredVillages || [],
+          discoveredSupplyPorts: state.discoveredSupplyPorts || [],
+          crewAssignment: state.crewAssignment || { navigation: 70, lookout: 20, combat: 10 },
         },
       });
       await loadSlots();
@@ -232,6 +235,15 @@ export default function SaveLoadModal({
       }
       if (payload.plunderedVillages) {
         state.plunderedVillages = payload.plunderedVillages;
+      }
+      if (payload.discoveredVillages) {
+        state.discoveredVillages = payload.discoveredVillages;
+      }
+      if (payload.discoveredSupplyPorts) {
+        state.discoveredSupplyPorts = payload.discoveredSupplyPorts;
+      }
+      if (payload.crewAssignment) {
+        state.crewAssignment = payload.crewAssignment;
       }
       
       const targetPortId = payload.portId || slot.current_port_id || '1';

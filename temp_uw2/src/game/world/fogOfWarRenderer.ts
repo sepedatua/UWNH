@@ -18,6 +18,8 @@ import explorationManager from './explorationManager';
 
 export interface SightRadiusBreakdown {
   baseTiles: number;
+  crewLookoutPercent: number;
+  crewLookoutFactor: number;
   lookoutBonus: number;
   telescopeBonus: number;
   timeOfDayFactor: number;
@@ -34,11 +36,16 @@ export const MIN_FOG_TILES = 4.5; // Dense fog blind lantern cone (~144 pixels)
  */
 export const calculateSightRadius = (): SightRadiusBreakdown => {
   const baseTiles = BASE_SIGHT_TILES;
+  const crewLookoutPercent = state.crewAssignment?.lookout ?? 20;
+  // 20% Lookout crew is baseline 1.0x. 0% is 0.5x. 40% is 1.5x.
+  const crewLookoutFactor = Math.max(0.4, 0.5 + (crewLookoutPercent / 20) * 0.5);
 
   // 1. Heavy Fog Override
   if (seaWeather.isFoggy()) {
     return {
       baseTiles,
+      crewLookoutPercent,
+      crewLookoutFactor,
       lookoutBonus: 0,
       telescopeBonus: 0,
       timeOfDayFactor: 1.0,
@@ -75,12 +82,19 @@ export const calculateSightRadius = (): SightRadiusBreakdown => {
   // 5. Storm Weather Reduction
   const weatherFactor = seaWeather.isStormy() ? 0.65 : 1.0;
 
-  const rawRadius = baseTiles * (1.0 + lookoutBonus + telescopeBonus) * timeOfDayFactor * weatherFactor;
+  const rawRadius =
+    baseTiles *
+    crewLookoutFactor *
+    (1.0 + lookoutBonus + telescopeBonus) *
+    timeOfDayFactor *
+    weatherFactor;
   const finalRadiusTiles = Math.max(MIN_FOG_TILES, Math.round(rawRadius * 10) / 10);
   const finalRadiusPixels = finalRadiusTiles * TILE_SIZE;
 
   return {
     baseTiles,
+    crewLookoutPercent,
+    crewLookoutFactor,
     lookoutBonus,
     telescopeBonus,
     timeOfDayFactor,

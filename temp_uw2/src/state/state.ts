@@ -98,6 +98,13 @@ export interface State {
   foragedLocations?: { x: number; y: number; day: number }[];
   villageFriendship?: Record<string, number>;
   plunderedVillages?: string[];
+  discoveredVillages?: string[];
+  discoveredSupplyPorts?: string[];
+  crewAssignment?: {
+    navigation: number;
+    lookout: number;
+    combat: number;
+  };
   luck?: number;
   isPaused: boolean;
 }
@@ -156,6 +163,13 @@ const state = {
   foragedLocations: [],
   villageFriendship: {},
   plunderedVillages: [],
+  discoveredVillages: [],
+  discoveredSupplyPorts: [],
+  crewAssignment: {
+    navigation: 70,
+    lookout: 20,
+    combat: 10,
+  },
   luck: 80,
   isPaused: false,
   ...savedState,

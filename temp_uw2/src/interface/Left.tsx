@@ -56,19 +56,17 @@ export default function Left({
         <div className="mb-4 text-right text-xl">{getCoins(gold)}</div>
         {Boolean(children) && <div>{children}</div>}
       </div>
-      {inPort && (
-        <div className="select-none">
-          <Popover label="Mates">
-            <Mates />
-          </Popover>
-          <Popover label="Fleet">
-            <Fleet />
-          </Popover>
-          <Popover label="Items">
-            <Items />
-          </Popover>
-        </div>
-      )}
+      <div className="select-none">
+        <Popover label="Mates">
+          <Mates />
+        </Popover>
+        <Popover label="Fleet">
+          <Fleet />
+        </Popover>
+        <Popover label="Items">
+          <Items />
+        </Popover>
+      </div>
       <div className="p-5 text-right">
         <Sound portId={portId} buildingId={buildingId} />
       </div>
