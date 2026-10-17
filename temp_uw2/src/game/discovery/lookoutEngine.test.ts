@@ -12,12 +12,14 @@ import {
   getFlagshipCrewDutyStats,
   recordVillageDiscovery,
   recordSupplyPortDiscovery,
+  recordPortDiscovery,
   isVillageDiscovered,
   isSupplyPortDiscovered,
+  isPortDiscovered,
 } from '../../state/actionsCrew';
 import { calculateSightRadius, BASE_SIGHT_TILES } from '../world/fogOfWarRenderer';
 import { villages } from '../../data/villageData';
-import { supplyPorts } from '../../data/portData';
+import { supplyPorts, regularPorts } from '../../data/portData';
 import getShipSpeed from '../world/shipSpeed';
 import { Sailor } from '../../data/sailorData';
 
@@ -25,6 +27,7 @@ describe('Milestone 13: Crow’s Nest Lookout & Proximity Detection System', () 
   beforeEach(() => {
     state.discoveredVillages = [];
     state.discoveredSupplyPorts = [];
+    state.discoveredPorts = ['1', '2', '3']; // Lisbon, Ceuta, Madeira known by default
     state.crewAssignment = { navigation: 70, lookout: 20, combat: 10 };
     state.fame = { adventure: 0, trade: 0, piracy: 0 };
     state.items = [];
@@ -154,6 +157,9 @@ describe('Milestone 13: Crow’s Nest Lookout & Proximity Detection System', () 
 
   describe('Part 4: Village Proximity Detection & First-Time Discovery Fame', () => {
     it('detects an uncharted village within active line-of-sight and awards +50 Adventure Fame', () => {
+      // Isolate village discovery by marking ports as known
+      state.discoveredPorts = regularPorts.map((_, i) => String(i + 1));
+
       // Stonehenge settlement: x: 890, y: 265
       const vStonehenge = villages[0];
       expect(vStonehenge.name).toContain('Stonehenge');
@@ -180,6 +186,7 @@ describe('Milestone 13: Crow’s Nest Lookout & Proximity Detection System', () 
     });
 
     it('does not re-award fame or duplicate discovery events on subsequent ticks', () => {
+      state.discoveredPorts = regularPorts.map((_, i) => String(i + 1));
       const vStonehenge = villages[0];
       const playerPos = { x: vStonehenge.position.x - 5, y: vStonehenge.position.y };
 
@@ -209,7 +216,7 @@ describe('Milestone 13: Crow’s Nest Lookout & Proximity Detection System', () 
   });
 
   describe('Part 5: Supply Haven Horizon Detection', () => {
-    it('detects uncharted supply ports on the horizon and awards +30 Adventure Fame', () => {
+    it('detects uncharted supply ports on the horizon and awards +100 Adventure Fame', () => {
       // Supply Port 0: Hekla (x: 784, y: 210)
       const sp = supplyPorts[0];
       expect(sp.name).toBe('Hekla');
@@ -226,10 +233,10 @@ describe('Milestone 13: Crow’s Nest Lookout & Proximity Detection System', () 
       const spEvent = result.newDiscoveries.find((d) => d.id === portId);
       expect(spEvent).toBeDefined();
       expect(spEvent?.type).toBe('supplyPort');
-      expect(spEvent?.fameAwarded).toBe(30);
+      expect(spEvent?.fameAwarded).toBe(100);
 
       expect(isSupplyPortDiscovered(portId)).toBe(true);
-      expect(state.fame.adventure).toBe(30);
+      expect(state.fame.adventure).toBe(100);
     });
   });
 
@@ -245,6 +252,47 @@ describe('Milestone 13: Crow’s Nest Lookout & Proximity Detection System', () 
       // At 50% nav duty: navCrew is 2.5 < 5, speed is halved
       const halfSpeed = getShipSpeed(ship, sailor, 0, { direction: 0, speed: 3 }, undefined, 0.5);
       expect(halfSpeed).toBeCloseTo(fullSpeed * 0.5, 1);
+    });
+  });
+
+  describe('Part 7: Regular Trade Port Horizon Detection', () => {
+    it('detects uncharted foreign commercial ports and awards +25 Adventure Fame', () => {
+      // Port 4 is Porto or similar (regularPorts[3])
+      const foreignPort = regularPorts[3];
+      const portId = '4';
+
+      expect(state.discoveredPorts?.includes(portId)).toBe(false);
+      expect(isPortDiscovered(portId)).toBe(false);
+      expect(state.fame.adventure).toBe(0);
+
+      // Place player 9 tiles away (within 14-tile sight)
+      const playerPos = { x: foreignPort.position.x - 6, y: foreignPort.position.y - 6 };
+      const result = checkLookoutSightings(playerPos);
+
+      expect(result.sightedPorts.some((p) => p.id === portId)).toBe(true);
+      const portEvent = result.newDiscoveries.find((d) => d.id === portId);
+      expect(portEvent).toBeDefined();
+      expect(portEvent?.type).toBe('port');
+      expect(portEvent?.fameAwarded).toBe(25);
+      expect(portEvent?.name).toBe(foreignPort.name);
+
+      expect(isPortDiscovered(portId)).toBe(true);
+      expect(state.fame.adventure).toBe(25);
+    });
+
+    it('does not re-notify or award fame for known home ports like Lisbon', () => {
+      // Lisbon is Port '1'
+      const lisbon = regularPorts[0];
+      expect(state.discoveredPorts?.includes('1')).toBe(true);
+
+      const playerPos = { x: lisbon.position.x - 5, y: lisbon.position.y };
+      const result = checkLookoutSightings(playerPos);
+
+      // Sighted in visual horizon: yes
+      expect(result.sightedPorts.some((p) => p.id === '1')).toBe(true);
+      // New discovery event: NO (already known)
+      expect(result.newDiscoveries.some((d) => d.id === '1')).toBe(false);
+      expect(state.fame.adventure).toBe(0);
     });
   });
 });

@@ -15,13 +15,17 @@ import { Position } from '../../types';
 import { WORLD_MAP_COLUMNS } from '../../constants';
 import { calculateSightRadius } from '../world/fogOfWarRenderer';
 import { villages, Village } from '../../data/villageData';
-import { supplyPorts, SupplyPortBase } from '../../data/portData';
-import { recordVillageDiscovery, recordSupplyPortDiscovery } from '../../state/actionsCrew';
+import { supplyPorts, SupplyPortBase, regularPorts, RegularPort } from '../../data/portData';
+import {
+  recordVillageDiscovery,
+  recordSupplyPortDiscovery,
+  recordPortDiscovery,
+} from '../../state/actionsCrew';
 
 export type CompassBearing = 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';
 
 export interface LookoutDiscoveryEvent {
-  type: 'village' | 'supplyPort';
+  type: 'village' | 'supplyPort' | 'port';
   id: string;
   name: string;
   bearing: CompassBearing;
@@ -36,6 +40,7 @@ export interface LookoutSightingsResult {
   sightedVillages: Village[];
   nearbyLandingVillage: Village | null;
   sightedSupplyPorts: { id: string; name: string; position: Position }[];
+  sightedPorts: { id: string; name: string; position: Position }[];
 }
 
 /**
@@ -147,7 +152,41 @@ export const checkLookoutSightings = (
             bearing,
             distanceTiles: Math.round(dist * 10) / 10,
             fameAwarded,
-            message: `🔭 Lookouts report: Supply Haven sighted bearing ${bearing}! (${sp.name}) (+${fameAwarded} Adventure Fame)`,
+            message: `🔭 Lookouts report: Uncharted Supply Haven sighted bearing ${bearing}! (${sp.name}) (+${fameAwarded} Adventure Fame)`,
+          });
+        }
+      }
+    }
+  });
+
+  // 3. Evaluate All 100 Regular Trade Ports
+  const sightedPorts: { id: string; name: string; position: Position }[] = [];
+
+  regularPorts.forEach((port, idx) => {
+    const portId = String(idx + 1); // Ports are numbered 1-100
+    const { dx, dy, dist } = getWrappedDistance(playerPos, port.position);
+
+    if (dist <= sightRadiusTiles) {
+      sightedPorts.push({
+        id: portId,
+        name: port.name,
+        position: port.position,
+      });
+
+      // Check for first-time discovery of foreign/uncharted trade port
+      const isAlreadyKnown = (state.discoveredPorts || []).includes(portId);
+      if (!isAlreadyKnown) {
+        const { isNewDiscovery, fameAwarded } = recordPortDiscovery(portId);
+        if (isNewDiscovery) {
+          const bearing = calculateCompassBearing(dx, dy);
+          newDiscoveries.push({
+            type: 'port',
+            id: portId,
+            name: port.name,
+            bearing,
+            distanceTiles: Math.round(dist * 10) / 10,
+            fameAwarded,
+            message: `🔭 Lookouts report: Foreign Harbor sighted bearing ${bearing}! (${port.name}) (+${fameAwarded} Adventure Fame)`,
           });
         }
       }
@@ -160,5 +199,6 @@ export const checkLookoutSightings = (
     sightedVillages,
     nearbyLandingVillage,
     sightedSupplyPorts,
+    sightedPorts,
   };
 };

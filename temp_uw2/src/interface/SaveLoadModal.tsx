@@ -111,6 +111,7 @@ export default function SaveLoadModal({
           plunderedVillages: state.plunderedVillages || [],
           discoveredVillages: state.discoveredVillages || [],
           discoveredSupplyPorts: state.discoveredSupplyPorts || [],
+          discoveredPorts: state.discoveredPorts || [],
           crewAssignment: state.crewAssignment || { navigation: 70, lookout: 20, combat: 10 },
         },
       });
@@ -241,6 +242,9 @@ export default function SaveLoadModal({
       }
       if (payload.discoveredSupplyPorts) {
         state.discoveredSupplyPorts = payload.discoveredSupplyPorts;
+      }
+      if (payload.discoveredPorts) {
+        state.discoveredPorts = payload.discoveredPorts;
       }
       if (payload.crewAssignment) {
         state.crewAssignment = payload.crewAssignment;

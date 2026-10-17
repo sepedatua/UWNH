@@ -167,15 +167,41 @@ export const recordSupplyPortDiscovery = (
 
   state.discoveredSupplyPorts.push(portId);
 
-  // Authentic Koei UW2 award: +30 Adventure Fame for charting supply ports
+  // Authentic Koei UW2 award: +100 Adventure Fame for charting uncharted supply havens
   if (!state.fame) {
     state.fame = { adventure: 0, trade: 0, piracy: 0 };
   }
-  state.fame.adventure = (state.fame.adventure || 0) + 30;
+  state.fame.adventure = (state.fame.adventure || 0) + 100;
 
-  return { isNewDiscovery: true, fameAwarded: 30 };
+  return { isNewDiscovery: true, fameAwarded: 100 };
 };
 
 export const isSupplyPortDiscovered = (portId: string): boolean => {
   return (state.discoveredSupplyPorts || []).includes(portId);
+};
+
+export const recordPortDiscovery = (
+  portId: string,
+): { isNewDiscovery: boolean; fameAwarded: number } => {
+  if (!state.discoveredPorts) {
+    state.discoveredPorts = [];
+  }
+
+  if (state.discoveredPorts.includes(portId)) {
+    return { isNewDiscovery: false, fameAwarded: 0 };
+  }
+
+  state.discoveredPorts.push(portId);
+
+  // Authentic Koei UW2 award: +25 Adventure Fame for uncharted foreign port discoveries
+  if (!state.fame) {
+    state.fame = { adventure: 0, trade: 0, piracy: 0 };
+  }
+  state.fame.adventure = (state.fame.adventure || 0) + 25;
+
+  return { isNewDiscovery: true, fameAwarded: 25 };
+};
+
+export const isPortDiscovered = (portId: string): boolean => {
+  return (state.discoveredPorts || []).includes(portId);
 };

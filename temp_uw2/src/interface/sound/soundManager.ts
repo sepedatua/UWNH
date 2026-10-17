@@ -8,7 +8,7 @@
  */
 
 export type SoundtrackMode = 'orchestrated' | 'fm_synth';
-export type SfxType = 'cannon' | 'coin' | 'bell' | 'sword' | 'waves' | 'fanfare' | 'click';
+export type SfxType = 'cannon' | 'coin' | 'bell' | 'shipBell' | 'sword' | 'waves' | 'fanfare' | 'click';
 
 export interface TrackMetadata {
   id: string;
@@ -169,6 +169,7 @@ class SoundManager {
         this.synthCoin(ctx, now);
         break;
       case 'bell':
+      case 'shipBell':
         this.synthBell(ctx, now);
         break;
       case 'sword':

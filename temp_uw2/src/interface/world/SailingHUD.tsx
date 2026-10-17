@@ -46,6 +46,7 @@ export default function SailingHUD() {
   const [nearbyVillage, setNearbyVillage] = useState<Village | null>(null);
   const [showVillageModal, setShowVillageModal] = useState<boolean>(false);
   const sightedFleetIdsRef = useRef<Set<string>>(new Set());
+  const lastNearbyPortIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     return autopilotManager.subscribe(() => {
@@ -128,6 +129,12 @@ export default function SailingHUD() {
   useEffect(() => {
     updateInterface.nearbyPort = (port) => {
       setNearbyPort(port);
+      if (port && port.id !== lastNearbyPortIdRef.current) {
+        lastNearbyPortIdRef.current = port.id;
+        soundManager.playSfx('shipBell');
+      } else if (!port) {
+        lastNearbyPortIdRef.current = null;
+      }
     };
 
     updateInterface.coordinates = (pos) => {
@@ -288,7 +295,11 @@ export default function SailingHUD() {
 
       {/* 1. Proximity Harbor Landing Banner */}
       {nearbyPort && (
-        <div className="absolute top-5 left-1/2 -translate-x-1/2 pointer-events-auto">
+        <div
+          className={`absolute ${
+            autopilotCourse?.active ? 'top-18' : 'top-5'
+          } left-1/2 -translate-x-1/2 pointer-events-auto z-30 transition-all`}
+        >
           <button
             type="button"
             onClick={handleDockClick}
@@ -418,7 +429,17 @@ export default function SailingHUD() {
 
       {/* 4. Floating Sea Event / Survival Toast */}
       {activeAlert && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 pointer-events-auto max-w-xl w-full px-4 animate-fade-in">
+        <div
+          className={`absolute ${
+            nearbyPort
+              ? autopilotCourse?.active
+                ? 'top-38'
+                : 'top-24'
+              : autopilotCourse?.active
+                ? 'top-18'
+                : 'top-6'
+          } left-1/2 -translate-x-1/2 pointer-events-auto max-w-xl w-full px-4 animate-fade-in z-50 transition-all`}
+        >
           <div
             className={`flex items-start justify-between gap-3 p-4 rounded-xl shadow-2xl backdrop-blur-md border ${
               activeAlert.type === 'danger'

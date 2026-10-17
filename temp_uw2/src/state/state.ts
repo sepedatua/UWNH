@@ -100,6 +100,7 @@ export interface State {
   plunderedVillages?: string[];
   discoveredVillages?: string[];
   discoveredSupplyPorts?: string[];
+  discoveredPorts?: string[];
   crewAssignment?: {
     navigation: number;
     lookout: number;
@@ -165,6 +166,7 @@ const state = {
   plunderedVillages: [],
   discoveredVillages: [],
   discoveredSupplyPorts: [],
+  discoveredPorts: ['1', '2', '3'],
   crewAssignment: {
     navigation: 70,
     lookout: 20,
