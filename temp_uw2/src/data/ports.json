@@ -97,7 +97,7 @@
   },
   "customPorts": [
     {
-      "id": "129",
+      "id": "131",
       "name": "Singapore",
       "position": { "x": 1540, "y": 590 },
       "economy": 750,
@@ -112,7 +112,7 @@
       }
     },
     {
-      "id": "130",
+      "id": "132",
       "name": "Honolulu",
       "position": { "x": 120, "y": 460 },
       "economy": 460,
@@ -127,7 +127,7 @@
       }
     },
     {
-      "id": "131",
+      "id": "133",
       "name": "Galapagos",
       "position": { "x": 340, "y": 550 },
       "economy": 220,
@@ -138,7 +138,7 @@
       "isSupplyPort": true
     },
     {
-      "id": "132",
+      "id": "134",
       "name": "Cape Verde",
       "position": { "x": 670, "y": 490 },
       "economy": 520,
@@ -153,7 +153,7 @@
       }
     },
     {
-      "id": "133",
+      "id": "135",
       "name": "Sydney",
       "position": { "x": 1880, "y": 860 },
       "economy": 580,

@@ -12,6 +12,10 @@ import { villages } from '../../data/villageData';
 import { XMarkIcon, EyeIcon } from '@heroicons/react/24/solid';
 import autopilotManager, { AutopilotCourse } from '../../game/world/autopilotManager';
 import { positionAdjacentToPort } from '../../state/selectors';
+import portRegistry from '../../game/port/portRegistry';
+
+import Assets from '../../assets';
+import { getAtlasMapCanvas } from '../../game/world/atlasMapGenerator';
 
 interface Props {
   isOpen: boolean;
@@ -20,6 +24,8 @@ interface Props {
 
 export default function WorldAtlasModal({ isOpen, onClose }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [showCoastlines, setShowCoastlines] = useState(true);
+  const [showFullGlobe, setShowFullGlobe] = useState(false);
   const [showPorts, setShowPorts] = useState(true);
   const [showLandmarks, setShowLandmarks] = useState(true);
   const [hoverInfo, setHoverInfo] = useState<string | null>(null);
@@ -157,11 +163,22 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
     ctx.translate(panOffset.x, panOffset.y);
     ctx.scale(zoom, zoom);
 
-    // 2. Antique Parchment Canvas Background
-    ctx.fillStyle = '#caa979';
-    ctx.fillRect(0, 0, width, height);
+    // 2. Base Canvas Layer: Render high-fidelity continental landmasses and coastlines
+    const baseMapCanvas = showCoastlines ? getAtlasMapCanvas() : null;
+    if (baseMapCanvas) {
+      try {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(baseMapCanvas, 0, 0, width, height);
+      } catch {
+        ctx.fillStyle = '#1e3852';
+        ctx.fillRect(0, 0, width, height);
+      }
+    } else {
+      ctx.fillStyle = '#1e3852';
+      ctx.fillRect(0, 0, width, height);
+    }
 
-    // 3. Render 108x54 Chunky Nautical Sectors
+    // 3. Render Exploration Fog of War & Nautical Gridlines
     const sectorW = width / SECTORS_X;
     const sectorH = height / SECTORS_Y;
 
@@ -171,13 +188,13 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
         const px = sx * sectorW;
         const py = sy * sectorH;
 
-        if (isExplored) {
-          // Explored waters: deep oceanic blue
-          ctx.fillStyle = '#1e3852';
-          ctx.fillRect(px, py, sectorW, sectorH);
-
-          // Subtle sector gridlines
-          ctx.strokeStyle = '#2b4d6e';
+        if (isExplored || showFullGlobe) {
+          if (!showCoastlines) {
+            ctx.fillStyle = '#1e3852';
+            ctx.fillRect(px, py, sectorW, sectorH);
+          }
+          // Subtle sector gridlines over explored sectors
+          ctx.strokeStyle = 'rgba(43, 77, 110, 0.25)';
           ctx.lineWidth = 0.5;
           ctx.strokeRect(px, py, sectorW, sectorH);
         } else {
@@ -200,6 +217,10 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
       const allPorts = [
         ...regularPorts.map((p, i) => ({ ...p, id: String(i + 1), isSupply: false })),
         ...supplyPorts.map((p, i) => ({ ...p, id: String(101 + i), isSupply: true })),
+        ...portRegistry.getAllCustomPorts().map((cp) => ({
+          ...cp,
+          isSupply: cp.isSupplyPort ?? (cp.archetype === 'supply'),
+        })),
       ];
 
       allPorts.forEach((port) => {
@@ -357,12 +378,29 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
     }
 
     ctx.restore();
-  }, [isOpen, showPorts, showLandmarks, playerPos, sightBreakdown, activeCourse, zoom, panOffset, selectedPortForCourse, courseRoute]);
+  }, [
+    isOpen,
+    showPorts,
+    showLandmarks,
+    showCoastlines,
+    showFullGlobe,
+    playerPos,
+    sightBreakdown,
+    activeCourse,
+    zoom,
+    panOffset,
+    selectedPortForCourse,
+    courseRoute,
+  ]);
 
   const findNearbyPortAtCoords = (worldX: number, worldY: number) => {
     const allPorts = [
       ...regularPorts.map((p, i) => ({ ...p, id: String(i + 1), isSupply: false })),
       ...supplyPorts.map((p, i) => ({ ...p, id: String(101 + i), isSupply: true })),
+      ...portRegistry.getAllCustomPorts().map((cp) => ({
+        ...cp,
+        isSupply: cp.isSupplyPort ?? (cp.archetype === 'supply'),
+      })),
     ];
 
     return allPorts.find((port) => {
@@ -465,8 +503,28 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
     const lonDeg = Math.abs(Math.round(((worldX - 1080) / 1080) * 180));
     const lonHem = worldX >= 1080 ? 'E' : 'W';
 
+    // Inspect terrain at hovered coordinate
+    let terrainDesc = '🌊 Navigable Waters';
+    try {
+      const tilemap = Assets.data('worldTilemap');
+      if (tilemap && tilemap.length >= 2160 * 1080) {
+        const tile = tilemap[worldY * 2160 + worldX];
+        if (tile >= 81) {
+          terrainDesc = '⛰️ Mountainous Range';
+        } else if (tile >= 71) {
+          terrainDesc = '🌲 Dense Woodland';
+        } else if (tile >= 50) {
+          terrainDesc = '🌾 Continental Coast / Plains';
+        } else if (worldY < 36 || worldY > 1044) {
+          terrainDesc = '🧊 Polar Glacial Shelf';
+        }
+      }
+    } catch {
+      // fallback
+    }
+
     setHoverInfo(
-      `${latDeg}°${latHem}, ${lonDeg}°${lonHem} • Sector: (${Math.floor(worldX / SECTOR_SIZE)}, ${Math.floor(worldY / SECTOR_SIZE)}) • ${isExplored ? '🌊 Charted Waters' : '📜 Terra Incognita'}`,
+      `${latDeg}°${latHem}, ${lonDeg}°${lonHem} • Sector: (${Math.floor(worldX / SECTOR_SIZE)}, ${Math.floor(worldY / SECTOR_SIZE)}) • ${terrainDesc} • ${isExplored ? 'Charted' : '📜 Terra Incognita'}`,
     );
   };
 
@@ -811,31 +869,58 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
         {/* Footer Controls & Cartographic Instruments */}
         <div className="bg-[#241a10] px-6 py-3 border-t-2 border-[#8c6f4b] flex justify-between items-center text-xs">
           {/* Left: Filter Toggles */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
+            <button
+              type="button"
+              onClick={() => setShowCoastlines(!showCoastlines)}
+              className={`px-2.5 py-1 rounded border flex items-center space-x-1.5 transition-colors cursor-pointer ${
+                showCoastlines
+                  ? 'bg-amber-900/60 border-amber-500 text-yellow-200'
+                  : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+              }`}
+            >
+              <span>🏝️</span>
+              <span>Coastlines & Land</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowFullGlobe(!showFullGlobe)}
+              className={`px-2.5 py-1 rounded border flex items-center space-x-1.5 transition-colors cursor-pointer ${
+                showFullGlobe
+                  ? 'bg-emerald-900/60 border-emerald-500 text-emerald-200'
+                  : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+              }`}
+              title="Toggle reveal full world globe vs fog of war"
+            >
+              <span>🌍</span>
+              <span>Full Globe {showFullGlobe ? '(Revealed)' : '(Charted Only)'}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setShowPorts(!showPorts)}
-              className={`px-2.5 py-1 rounded border flex items-center space-x-1.5 transition-colors ${
+              className={`px-2.5 py-1 rounded border flex items-center space-x-1.5 transition-colors cursor-pointer ${
                 showPorts
                   ? 'bg-amber-900/60 border-amber-500 text-yellow-200'
                   : 'bg-neutral-800 border-neutral-700 text-neutral-400'
               }`}
             >
               <span>⚓</span>
-              <span>Discovered Ports</span>
+              <span>Ports</span>
             </button>
 
             <button
               type="button"
               onClick={() => setShowLandmarks(!showLandmarks)}
-              className={`px-2.5 py-1 rounded border flex items-center space-x-1.5 transition-colors ${
+              className={`px-2.5 py-1 rounded border flex items-center space-x-1.5 transition-colors cursor-pointer ${
                 showLandmarks
                   ? 'bg-amber-900/60 border-amber-500 text-yellow-200'
                   : 'bg-neutral-800 border-neutral-700 text-neutral-400'
               }`}
             >
               <span>🏛️</span>
-              <span>Exploration Discoveries</span>
+              <span>Discoveries</span>
             </button>
           </div>
 

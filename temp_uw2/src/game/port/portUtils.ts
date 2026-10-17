@@ -23,6 +23,33 @@ export type PortData = (
 ) & { id: string; tilemap: number };
 
 export const getPortData = (id: string): PortData => {
+  const number = Number(id) - 1;
+  const builtinTotal = regularPorts.length + supplyPorts.length; // 130 ports (1..100 regular, 101..130 supply)
+
+  // 1. Resolve Canonical Built-in Ports (1..130)
+  if (!isNaN(number) && number >= 0 && number < builtinTotal) {
+    const isSupplyPort = number >= regularPorts.length;
+
+    if (!isSupplyPort) {
+      return {
+        ...regularPorts[number],
+        id,
+        isSupplyPort,
+        tilemap: number,
+      };
+    }
+
+    return {
+      ...supplyPorts[number - regularPorts.length],
+      buildings: SUPPLY_PORT_BUILDINGS,
+      tileset: SUPPLY_PORT_TILESET,
+      id,
+      isSupplyPort,
+      tilemap: regularPorts.length,
+    };
+  }
+
+  // 2. Resolve Extensible Custom Ports (131+)
   if (portRegistry.isCustomPort(id)) {
     const customData = portRegistry.buildPortData(id);
     if (customData) {
@@ -30,31 +57,7 @@ export const getPortData = (id: string): PortData => {
     }
   }
 
-  const number = Number(id) - 1;
-
-  if (number >= regularPorts.length + supplyPorts.length) {
-    throw Error('Port does not exist!');
-  }
-
-  const isSupplyPort = number >= regularPorts.length;
-
-  if (!isSupplyPort) {
-    return {
-      ...regularPorts[number],
-      id,
-      isSupplyPort,
-      tilemap: number,
-    };
-  }
-
-  return {
-    ...supplyPorts[number - regularPorts.length],
-    buildings: SUPPLY_PORT_BUILDINGS,
-    tileset: SUPPLY_PORT_TILESET,
-    id,
-    isSupplyPort,
-    tilemap: regularPorts.length,
-  };
+  throw Error('Port does not exist!');
 };
 
 let portPositions: { id: string; position: Position }[] | null = null;

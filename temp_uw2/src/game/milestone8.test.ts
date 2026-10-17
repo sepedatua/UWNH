@@ -9,7 +9,7 @@ import { COMMODITIES } from '../data/commodityData';
 describe('Milestone 8: Port Extensibility & Audio Pipeline Engine', () => {
   beforeEach(() => {
     resetPortCache();
-    state.portId = '129';
+    state.portId = '131';
     state.gold = 50000;
     state.gameMode = 'sp_endless';
     state.fleets = {
@@ -38,15 +38,15 @@ describe('Milestone 8: Port Extensibility & Audio Pipeline Engine', () => {
       expect(customPorts.length).toBeGreaterThanOrEqual(5);
 
       const ids = customPorts.map((p) => p.id);
-      expect(ids).toContain('129'); // Singapore
-      expect(ids).toContain('130'); // Honolulu
-      expect(ids).toContain('131'); // Galapagos
-      expect(ids).toContain('132'); // Cape Verde
-      expect(ids).toContain('133'); // Sydney
+      expect(ids).toContain('131'); // Singapore
+      expect(ids).toContain('132'); // Honolulu
+      expect(ids).toContain('133'); // Galapagos
+      expect(ids).toContain('134'); // Cape Verde
+      expect(ids).toContain('135'); // Sydney
     });
 
-    it('procedurally maps archetype layouts to custom port 129 (Singapore)', () => {
-      const singapore = portRegistry.buildPortData('129');
+    it('procedurally maps archetype layouts to custom port 131 (Singapore)', () => {
+      const singapore = portRegistry.buildPortData('131');
       expect(singapore).toBeDefined();
       expect(singapore?.name).toBe('Singapore');
       expect(singapore?.isSupplyPort).toBe(false);
@@ -60,24 +60,41 @@ describe('Milestone 8: Port Extensibility & Audio Pipeline Engine', () => {
     });
 
     it('resolves custom ports through getPortData()', () => {
-      const port129 = getPortData('129');
-      expect(port129.name).toBe('Singapore');
-      expect(port129.economy).toBe(750);
-      expect(port129.industry).toBe(700);
-
       const port131 = getPortData('131');
-      expect(port131.name).toBe('Galapagos');
-      expect(port131.isSupplyPort).toBe(true);
+      expect(port131.name).toBe('Singapore');
+      expect(port131.economy).toBe(750);
+      expect(port131.industry).toBe(700);
+
+      const port133 = getPortData('133');
+      expect(port133.name).toBe('Galapagos');
+      expect(port133.isSupplyPort).toBe(true);
+    });
+
+    it('preserves canonical Montevideo (port 129) and Forel (port 130) as supply ports without custom port collision', () => {
+      const montevideo = getPortData('129');
+      expect(montevideo.name).toBe('Montevideo');
+      expect(montevideo.isSupplyPort).toBe(true);
+      expect(montevideo.position).toEqual({ x: 516, y: 906 });
+      expect(montevideo.tileset).toBe(3);
+
+      const forel = getPortData('130');
+      expect(forel.name).toBe('Forel');
+      expect(forel.isSupplyPort).toBe(true);
+      expect(forel.position).toEqual({ x: 660, y: 190 });
+
+      // Proximity docking for Montevideo
+      const docked = portAdjacentAt({ x: 516, y: 907 });
+      expect(docked).toBe('129');
     });
 
     it('detects proximity docking for custom ports in portAdjacentAt()', () => {
       // Singapore is at x: 1540, y: 590
       const nearby = portAdjacentAt({ x: 1540, y: 591 });
-      expect(nearby).toBe('129');
+      expect(nearby).toBe('131');
 
       // Honolulu is at x: 120, y: 460
       const honolulu = portAdjacentAt({ x: 121, y: 460 });
-      expect(honolulu).toBe('130');
+      expect(honolulu).toBe('132');
     });
 
     it('allows dynamic registration of new ports at runtime', () => {
@@ -157,7 +174,7 @@ describe('Milestone 8: Port Extensibility & Audio Pipeline Engine', () => {
   });
 
   describe('Commerce Integration in Extensible Custom Ports', () => {
-    it('executes commodity buying and selling in custom port 129 with coin SFX trigger', async () => {
+    it('executes commodity buying and selling in custom port 131 with coin SFX trigger', async () => {
       const spySfx = vi.spyOn(soundManager, 'playSfx');
 
       const commodity = COMMODITIES[0];

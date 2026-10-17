@@ -1,9 +1,10 @@
 import portsConfig from '../../data/ports.json';
 import { Position } from '../../types';
-import { BuildingLocations } from '../../data/portData';
+import { BuildingLocations, regularPorts, supplyPorts } from '../../data/portData';
 import { PortData } from './portUtils';
 import { MarketId, RegionId } from '../../data/portExtraData';
 import { IndustryId } from '../../data/portShipyardData';
+import { logger } from '../../logger';
 
 export type ArchetypeId =
   | 'mediterranean'
@@ -55,12 +56,20 @@ class PortRegistry {
     }
     if (Array.isArray(config?.customPorts)) {
       config.customPorts.forEach((p: CustomPortDefinition) => {
-        this.customPorts.set(p.id, p);
+        this.registerCustomPort(p);
       });
     }
   }
 
   public registerCustomPort(port: CustomPortDefinition): void {
+    const builtinTotal = regularPorts.length + supplyPorts.length;
+    const portNum = Number(port.id);
+    if (!isNaN(portNum) && portNum >= 1 && portNum <= builtinTotal) {
+      logger.warn(
+        'PortRegistry',
+        `Custom port ID conflict! Port '${port.name}' (ID: ${port.id}) overlaps with built-in port (1-${builtinTotal}). Custom ports must use ID ${builtinTotal + 1} or higher.`,
+      );
+    }
     this.customPorts.set(port.id, port);
   }
 

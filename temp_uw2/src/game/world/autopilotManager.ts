@@ -29,6 +29,7 @@ import soundManager from '../../interface/sound/soundManager';
 import seaWeather from './seaWeather';
 import Input from '../../input';
 import { regularPorts, supplyPorts } from '../../data/portData';
+import portRegistry from '../port/portRegistry';
 import explorationManager from './explorationManager';
 
 export const MACRO_SCALE = 10; // 10x10 tiles per macro cell
@@ -185,7 +186,7 @@ class AutopilotManager {
 
     // Ensure all charted port cells are at least navigable (type 2)
     try {
-      [...regularPorts, ...supplyPorts].forEach((port) => {
+      [...regularPorts, ...supplyPorts, ...portRegistry.getAllCustomPorts()].forEach((port) => {
         const c = Math.floor(port.position.x / MACRO_SCALE) % MACRO_COLS;
         const r = Math.floor(port.position.y / MACRO_SCALE);
         if (r >= 0 && r < MACRO_ROWS) {
