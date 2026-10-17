@@ -26,6 +26,7 @@ import { checkCoastStatus, CoastStatus } from '../../game/world/coastalForageEng
 import { Village, getNearbyVillage } from '../../data/villageData';
 import VillageModal from './VillageModal';
 import { checkLookoutSightings } from '../../game/discovery/lookoutEngine';
+import logger from '../../logger';
 
 export default function SailingHUD() {
   const [nearbyPort, setNearbyPort] = useState<NearbyPortInfo | null>(null);
@@ -44,6 +45,7 @@ export default function SailingHUD() {
   const [coastStatus, setCoastStatus] = useState<CoastStatus | null>(null);
   const [showAnchorageModal, setShowAnchorageModal] = useState<boolean>(false);
   const [nearbyVillage, setNearbyVillage] = useState<Village | null>(null);
+  const [activeVillage, setActiveVillage] = useState<Village | null>(null);
   const [showVillageModal, setShowVillageModal] = useState<boolean>(false);
   const sightedFleetIdsRef = useRef<Set<string>>(new Set());
   const lastNearbyPortIdRef = useRef<string | null>(null);
@@ -99,15 +101,34 @@ export default function SailingHUD() {
     soundManager.playSfx('shipBell');
   }, [coords]);
 
+  const handleOpenVillage = useCallback((vil: Village) => {
+    if (autopilotCourse?.active) {
+      autopilotManager.cancelCourse('Sighted settlement. Anchoring for exploration.');
+    }
+    logger.info('SailingHUD', `Captain entering settlement modal: ${vil.name} (${vil.id})`);
+    setActiveVillage(vil);
+    setShowVillageModal(true);
+  }, [autopilotCourse]);
+
+  const handleCloseVillage = useCallback(() => {
+    logger.info('SailingHUD', 'Closing VillageModal from SailingHUD');
+    setShowVillageModal(false);
+    setActiveVillage(null);
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
       if ((e.key === 'f' || e.key === 'F') && activeDiscovery) {
         handleExplore();
-      } else if ((e.key === 'v' || e.key === 'V') && nearbyVillage) {
-        setShowVillageModal(true);
-      } else if ((e.key === 'c' || e.key === 'C') && coastStatus?.isNearCoast) {
+      } else if ((e.key === 'v' || e.key === 'V') && nearbyVillage && !showVillageModal) {
+        handleOpenVillage(nearbyVillage);
+      } else if ((e.key === 'c' || e.key === 'C') && coastStatus?.isNearCoast && !showAnchorageModal) {
+        if (autopilotCourse?.active) {
+          autopilotManager.cancelCourse('Anchoring along coastline.');
+        }
+        logger.info('SailingHUD', 'Captain entering Coastal Anchorage via [C]');
         setShowAnchorageModal(true);
       } else if (e.key === 'j' || e.key === 'J') {
         setShowJournal((prev) => !prev);
@@ -117,14 +138,42 @@ export default function SailingHUD() {
         triggerCombat(closestNpcFleet.name, closestNpcFleet.captainName);
       } else if ((e.key === 'i' || e.key === 'I') && interceptFleet) {
         handleIntercept();
-      } else if ((e.key === 'Escape' || e.key === ' ') && autopilotCourse?.active) {
+      } else if (e.key === 'Escape') {
+        if (showVillageModal) {
+          handleCloseVillage();
+        } else if (showAnchorageModal) {
+          logger.info('SailingHUD', 'Closing Coastal Anchorage via [Escape]');
+          setShowAnchorageModal(false);
+        } else if (showJournal) {
+          setShowJournal(false);
+        } else if (activeEncounterFleet) {
+          setActiveEncounterFleet(null);
+        } else if (autopilotCourse?.active) {
+          autopilotManager.cancelCourse('Autopilot Disengaged by Captain.');
+        }
+      } else if (e.key === ' ' && autopilotCourse?.active) {
         autopilotManager.cancelCourse('Autopilot Disengaged by Captain.');
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeDiscovery, coastStatus, interceptFleet, autopilotCourse, closestNpcFleet, handleExplore, handleIntercept]);
+  }, [
+    activeDiscovery,
+    coastStatus,
+    interceptFleet,
+    autopilotCourse,
+    closestNpcFleet,
+    nearbyVillage,
+    showVillageModal,
+    showAnchorageModal,
+    showJournal,
+    activeEncounterFleet,
+    handleExplore,
+    handleIntercept,
+    handleOpenVillage,
+    handleCloseVillage,
+  ]);
 
   useEffect(() => {
     updateInterface.nearbyPort = (port) => {
@@ -328,7 +377,7 @@ export default function SailingHUD() {
         <div className="absolute top-24 left-1/2 -translate-x-1/2 pointer-events-auto">
           <button
             type="button"
-            onClick={() => setShowVillageModal(true)}
+            onClick={() => handleOpenVillage(nearbyVillage)}
             className="flex items-center gap-3 px-6 py-3 rounded-xl border-2 border-amber-500 bg-gradient-to-r from-amber-950/95 via-yellow-950/95 to-neutral-900/95 shadow-[0_0_30px_rgba(245,158,11,0.6)] backdrop-blur-md hover:scale-105 transition-all cursor-pointer animate-pulse"
           >
             <span className="text-3xl">⛺</span>
@@ -633,10 +682,10 @@ export default function SailingHUD() {
         </div>
       )}
 
-      {showVillageModal && nearbyVillage && (
+      {showVillageModal && (activeVillage || nearbyVillage) && (
         <VillageModal
-          village={nearbyVillage}
-          onClose={() => setShowVillageModal(false)}
+          village={activeVillage || nearbyVillage!}
+          onClose={handleCloseVillage}
         />
       )}
     </div>

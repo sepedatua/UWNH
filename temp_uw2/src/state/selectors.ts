@@ -8,6 +8,8 @@ import createMap from '../map';
 import { applyPositionDelta } from '../utils';
 import getSailor from '../data/sailorData';
 
+import { shipData } from '../data/shipData';
+
 export const getTimeOfDay = () => state.timePassed % 1440;
 
 export const isDay = () => {
@@ -60,7 +62,11 @@ export const canAfford = (cost: number) => state.gold > cost;
 export const getUsedShips = () => {
   const exitingUsedShips = state.usedShipsAtPort[state.portId!];
 
-  if (exitingUsedShips) {
+  if (
+    exitingUsedShips &&
+    Object.keys(exitingUsedShips).length > 0 &&
+    Object.values(exitingUsedShips).every((sId) => Boolean(sId && shipData[sId]))
+  ) {
     return exitingUsedShips;
   }
 

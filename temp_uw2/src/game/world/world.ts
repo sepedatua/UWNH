@@ -20,10 +20,26 @@ import { renderVillageMarkers } from './villageMarkerRenderer';
 import explorationManager from './explorationManager';
 import seaWeather from './seaWeather';
 import state from '../../state/state';
+import logger from '../../logger';
 
 const createWorld = () => {
-  const canvas = document.getElementById('camera') as HTMLCanvasElement;
-  const context = canvas.getContext('2d', { alpha: false })!;
+  const canvas = document.getElementById('camera') as HTMLCanvasElement | null;
+  if (!canvas) {
+    logger.warn('World', 'Cannot initialize world rendering: #camera canvas element not found.');
+    return {
+      update: () => {},
+      draw: () => {},
+    };
+  }
+
+  const context = canvas.getContext('2d', { alpha: false });
+  if (!context) {
+    logger.error('World', 'Cannot initialize world rendering: Failed to get 2d context from #camera.');
+    return {
+      update: () => {},
+      draw: () => {},
+    };
+  }
 
   const width = canvas.width / TILE_SIZE;
   const height = canvas.height / TILE_SIZE;
@@ -49,8 +65,10 @@ const createWorld = () => {
       characters.update();
 
       const pPos = characters.player().position(0);
-      const sight = calculateSightRadius();
-      explorationManager.revealAroundPosition(pPos.x, pPos.y, sight.finalRadiusTiles);
+      if (pPos && !isNaN(pPos.x) && !isNaN(pPos.y)) {
+        const sight = calculateSightRadius();
+        explorationManager.revealAroundPosition(pPos.x, pPos.y, sight.finalRadiusTiles);
+      }
     },
     draw: () => {
       const player = characters.player();
@@ -63,6 +81,11 @@ const createWorld = () => {
       );
 
       const playerPos = player.position(PercentNextMove.get());
+      if (!playerPos || isNaN(playerPos.x) || isNaN(playerPos.y)) {
+        logger.error('World', `Invalid player coordinates detected in draw: (${playerPos?.x}, ${playerPos?.y})`);
+        return;
+      }
+
       const sight = calculateSightRadius();
 
       drawCamera(context, { ...camera, width, height }, map, getTimeOfDay());

@@ -95,14 +95,16 @@ function Interface({ resolve }: Props) {
         <TopBar />
       </ErrorBoundary>
       <div className="flex items-stretch">
-        <Left
-          portId={portId}
-          buildingId={buildingId}
-          timePassed={timePassed}
-          gold={gold}
-        >
-          <Provisions hidden={inPort} />
-        </Left>
+        <ErrorBoundary fallbackTitle="Left Sidebar">
+          <Left
+            portId={portId}
+            buildingId={buildingId}
+            timePassed={timePassed}
+            gold={gold}
+          >
+            <Provisions hidden={inPort} />
+          </Left>
+        </ErrorBoundary>
         <div
           className={classNames(
             'w-[1280px] h-[800px] relative select-none',
@@ -112,27 +114,38 @@ function Interface({ resolve }: Props) {
           onContextMenu={(e) => e.preventDefault()}
         >
           {inCombat && (
-            <BattleArena
-              enemyFleetName={combatEncounter?.enemyFleetName}
-              enemyCommodoreName={combatEncounter?.enemyCommodoreName}
-              onCombatConcluded={(victory) => endCombat(victory)}
-            />
+            <ErrorBoundary fallbackTitle="Battle Arena">
+              <BattleArena
+                enemyFleetName={combatEncounter?.enemyFleetName}
+                enemyCommodoreName={combatEncounter?.enemyCommodoreName}
+                onCombatConcluded={(victory) => endCombat(victory)}
+              />
+            </ErrorBoundary>
           )}
-          {!inCombat && buildingId !== null && <Building buildingId={buildingId} />}
+          {!inCombat && buildingId !== null && (
+            <ErrorBoundary fallbackTitle="Building Interior">
+              <Building buildingId={buildingId} />
+            </ErrorBoundary>
+          )}
           {!inCombat && (
             <div className={buildingId ? 'hidden' : ''}>
               <Camera />
             </div>
           )}
-          {!inPort && buildingId === null && !inCombat && <SailingHUD />}
+          {!inPort && buildingId === null && !inCombat && (
+            <ErrorBoundary fallbackTitle="Sailing HUD">
+              <SailingHUD />
+            </ErrorBoundary>
+          )}
           {isPaused && <PauseOverlay onResume={() => setPaused(false)} />}
         </div>
 
-
-        <Right>
-          {inPort && <PortInfo portId={portId} />}
-          <Indicators hidden={inPort} />
-        </Right>
+        <ErrorBoundary fallbackTitle="Right Sidebar">
+          <Right>
+            {inPort && <PortInfo portId={portId} />}
+            <Indicators hidden={inPort} />
+          </Right>
+        </ErrorBoundary>
       </div>
     </div>
   );

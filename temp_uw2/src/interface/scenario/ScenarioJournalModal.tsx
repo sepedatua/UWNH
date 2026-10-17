@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import state from '../../state/state';
 import {
   getCurrentCampaign,
@@ -6,6 +6,7 @@ import {
   isCurrentChapterComplete,
   completeCurrentChapter,
 } from '../../game/scenario/scenarioEngine';
+import logger from '../../logger';
 
 interface Props {
   onClose: () => void;
@@ -17,13 +18,45 @@ export default function ScenarioJournalModal({ onClose }: Props) {
   const chapter = getCurrentChapter();
   const allComplete = isCurrentChapterComplete();
 
+  useEffect(() => {
+    logger.info('ScenarioJournal', `Opened Journal: Chapter ${chapter.chapter} (${campaign.protagonistName})`, {
+      campaign: campaign.campaignTitle,
+      chapter: chapter.chapter,
+      allComplete,
+    });
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        logger.info('ScenarioJournal', '[Escape] pressed in Journal modal');
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      logger.info('ScenarioJournal', 'Closed Journal modal');
+    };
+  }, [campaign, chapter, allComplete, onClose]);
+
   const handleClaim = () => {
+    logger.info('ScenarioJournal', `Claiming chapter ${chapter.chapter} rewards`);
     const res = completeCurrentChapter();
     setResultMessage(res.message);
   };
 
   return (
-    <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50 pointer-events-auto font-sans">
+    <div
+      className="absolute inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50 pointer-events-auto font-sans select-none"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          logger.info('ScenarioJournal', 'Backdrop clicked, closing Journal modal');
+          onClose();
+        }
+      }}
+    >
       <div className="max-w-2xl w-full bg-[#18120c] border-2 border-[#8c6f4b] rounded-xl shadow-2xl overflow-hidden text-[#ede0cb]">
         {/* Header */}
         <div className="bg-[#241a12] border-b border-[#63482a] p-4 flex justify-between items-center">

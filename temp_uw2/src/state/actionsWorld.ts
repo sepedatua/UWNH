@@ -24,12 +24,13 @@ import seaWeather from '../game/world/seaWeather';
 import { calculateSightRadius } from '../game/world/fogOfWarRenderer';
 import explorationManager from '../game/world/explorationManager';
 import autopilotManager from '../game/world/autopilotManager';
-
+import logger from '../logger';
 
 export const dock = (position: Position) => {
   const portId = portAdjacentAt(position);
 
   if (!portId) {
+    logger.warn('Navigation', `Dock attempt failed: no port adjacent to position (${position.x}, ${position.y})`);
     updateInterface.seaAlert?.({
       id: generateId(),
       type: 'warning',
@@ -51,6 +52,7 @@ export const dock = (position: Position) => {
   }
 
   const portData = getPortData(portId);
+  logger.info('Navigation', `Docking into harbor: ${portData.name} (Port ${portId}) from (${position.x}, ${position.y})`);
 
   (state as any).world = null;
   state.port = createPort(portId);
@@ -191,10 +193,15 @@ export const setSail = () => {
           sight.finalRadiusTiles,
         );
       }
-    } catch (err) {
-      console.error('Error calculating adjacent sea coordinate:', err);
+    } catch (err: any) {
+      logger.error('Navigation', `Error calculating departure tile for port ${currentPortId}: ${err?.message}`, err);
+      if (!playerFleet.position) {
+        playerFleet.position = { x: 840, y: 359 };
+      }
     }
   }
+
+  logger.info('Navigation', `Setting sail from port ${currentPortId}. Departure coordinates: (${playerFleet?.position?.x}, ${playerFleet?.position?.y})`);
 
   state.portId = null;
   state.buildingId = null;

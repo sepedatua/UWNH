@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { Discovery } from '../../data/discoveryData';
+import logger from '../../logger';
 
 interface Props {
   discovery: Discovery;
@@ -6,6 +8,30 @@ interface Props {
 }
 
 export default function DiscoveryModal({ discovery, onClose }: Props) {
+  useEffect(() => {
+    logger.info('DiscoveryModal', `Opened Discovery Modal: ${discovery.name} (${discovery.id})`, {
+      rank: discovery.rank,
+      category: discovery.category,
+      fameReward: discovery.fameReward,
+      goldValue: discovery.goldValue,
+    });
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        logger.info('DiscoveryModal', `Key [${e.key}] pressed in Discovery Modal for ${discovery.name}`);
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      logger.info('DiscoveryModal', `Closed Discovery Modal: ${discovery.name}`);
+    };
+  }, [discovery, onClose]);
+
   const getRankBadge = (rank: string) => {
     switch (rank) {
       case '☆':
@@ -20,7 +46,15 @@ export default function DiscoveryModal({ discovery, onClose }: Props) {
   };
 
   return (
-    <div className="absolute inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 pointer-events-auto font-sans">
+    <div
+      className="absolute inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 pointer-events-auto font-sans select-none"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          logger.info('DiscoveryModal', `Backdrop clicked, closing Discovery Modal for ${discovery.name}`);
+          onClose();
+        }
+      }}
+    >
       <div className="max-w-lg w-full bg-[#1c140d] border-2 border-[#b89558] rounded-2xl shadow-[0_0_50px_rgba(234,179,8,0.3)] overflow-hidden text-[#ede0cb] text-center p-6">
         {/* Animated Icon */}
         <div className="text-6xl mb-3 animate-bounce">{discovery.icon}</div>

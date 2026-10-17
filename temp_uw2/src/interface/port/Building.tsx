@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import Shipyard from './shipyard/Shipyard';
 import BuildingMenu from '../common/BuildingMenu';
 import Harbor from './harbor/Harbor';
@@ -15,6 +16,8 @@ import Guild from './Guild';
 import Mansion from './Mansion';
 import FortuneTeller from './FortuneTeller';
 import { isDay } from '../../state/selectors';
+import logger from '../../logger';
+import state from '../../state/state';
 
 interface Props {
   buildingId: string;
@@ -23,6 +26,14 @@ interface Props {
 export default function Building({ buildingId }: Props) {
   const { options } = buildings[buildingId];
   const { back } = useBuilding();
+
+  useEffect(() => {
+    const bName = buildings[buildingId]?.name || `Building ${buildingId}`;
+    logger.info('PortLocation', `Entered ${bName} (ID: ${buildingId}) in Port ${state.portId}`);
+    return () => {
+      logger.info('PortLocation', `Exited ${bName} (ID: ${buildingId}) in Port ${state.portId}`);
+    };
+  }, [buildingId]);
 
   const isNight = !isDay();
   const openAtNight = ['2', '4', '5']; // Pub, Harbor, Lodge open 24/7

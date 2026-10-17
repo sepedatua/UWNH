@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { NpcFleetInstance } from '../../game/world/npcFleetManager';
 import { triggerCombat } from '../../state/actionsWorld';
 import soundManager from '../sound/soundManager';
+import logger from '../../logger';
 
 interface Props {
   fleet: NpcFleetInstance;
@@ -10,6 +11,30 @@ interface Props {
 
 export default function AtSeaEncounterModal({ fleet, onClose }: Props) {
   const [gossipRevealed, setGossipRevealed] = useState(false);
+
+  useEffect(() => {
+    logger.info('AtSeaEncounter', `Opened Encounter with ${fleet.name} (${fleet.nation})`, {
+      captain: fleet.captainName,
+      ships: fleet.ships.length,
+      hostile: fleet.hostile,
+      archetype: fleet.archetype,
+    });
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        logger.info('AtSeaEncounter', `[Escape] pressed in Encounter modal for ${fleet.name}`);
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      logger.info('AtSeaEncounter', `Closed Encounter modal with ${fleet.name}`);
+    };
+  }, [fleet, onClose]);
 
   const getNationFlag = (nation: string) => {
     switch (nation) {
@@ -27,6 +52,7 @@ export default function AtSeaEncounterModal({ fleet, onClose }: Props) {
   };
 
   const handleAttack = () => {
+    logger.warn('AtSeaEncounter', `Capitain attacked fleet: ${fleet.name} commanded by ${fleet.captainName}`);
     soundManager.playSfx('shipBell');
     onClose();
     triggerCombat(fleet.name, fleet.captainName);
@@ -41,7 +67,15 @@ export default function AtSeaEncounterModal({ fleet, onClose }: Props) {
     : 'None';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fadeIn">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fadeIn pointer-events-auto select-none"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          logger.info('AtSeaEncounter', `Backdrop clicked, disengaging from ${fleet.name}`);
+          onClose();
+        }
+      }}
+    >
       <div className="relative w-full max-w-lg bg-[#1a140e] border-2 border-[#b89758] rounded-xl shadow-[0_0_30px_rgba(0,0,0,0.9)] text-[#e8dcc4] overflow-hidden font-serif">
         {/* Decorative Header Bar */}
         <div className="bg-gradient-to-r from-[#2d2013] via-[#4a3520] to-[#2d2013] border-b border-[#b89758]/50 px-5 py-3 flex items-center justify-between">
@@ -66,7 +100,10 @@ export default function AtSeaEncounterModal({ fleet, onClose }: Props) {
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              logger.info('AtSeaEncounter', `Close button clicked for ${fleet.name}`);
+              onClose();
+            }}
             className="text-neutral-400 hover:text-white text-lg p-1 transition-colors cursor-pointer"
           >
             ✕

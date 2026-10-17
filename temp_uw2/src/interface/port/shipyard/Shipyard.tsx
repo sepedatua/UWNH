@@ -91,12 +91,15 @@ export default function Shipyard() {
   // 1. USED SHIP
   if (option === 'Used Ship') {
     const usedShips = getUsedShips();
+    const validUsedShips = Object.entries(usedShips).filter(
+      ([_, sId]) => Boolean(sId && shipData[sId]),
+    );
 
     menu2 = (
       <BuildingMenu
         title="Ship Model"
-        options={Object.entries(usedShips).map(([id, sId]) => ({
-          label: shipData[sId].name,
+        options={validUsedShips.map(([id, sId]) => ({
+          label: shipData[sId]?.name || 'Unknown Vessel',
           value: id,
         }))}
         onSelect={(sId) => {

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Village } from '../../data/villageData';
 import { Discovery, getDiscoveryById } from '../../data/discoveryData';
 import {
@@ -15,6 +15,7 @@ import {
 import DiscoveryModal from './DiscoveryModal';
 import { getPlayerFleet } from '../../state/selectorsFleet';
 import state from '../../state/state';
+import logger from '../../logger';
 
 interface Props {
   village: Village;
@@ -40,41 +41,118 @@ export default function VillageModal({ village, onClose }: Props) {
   const waterCount = flagship?.cargo.find((c) => c.type === 'water')?.quantity || 0;
   const luxuryGifts = useMemo(() => getAvailableLuxuryGifts(), [friendship, isPlundered]);
 
+  // Lifecycle logging & global keyboard dismissal
+  useEffect(() => {
+    logger.info('VillageModal', `Opened Settlement Modal: ${village.name} (${village.id})`, {
+      villageId: village.id,
+      region: village.region,
+      coordsNav: village.coordinatesNav,
+      friendship,
+      isPlundered,
+      discoveryId: village.discoveryId,
+      isFound,
+      flagshipCrew: flagship?.crew || 0,
+      gold: state.gold,
+    });
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        logger.info('VillageModal', `[Escape] triggered inside VillageModal for ${village.name}`);
+        if (showPlunderConfirm) {
+          setShowPlunderConfirm(false);
+        } else if (showGiftSelector) {
+          setShowGiftSelector(false);
+        } else if (activeDiscovery) {
+          setActiveDiscovery(null);
+        } else {
+          onClose();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      logger.info('VillageModal', `Closed Settlement Modal: ${village.name} (${village.id})`);
+    };
+  }, [village, onClose, showPlunderConfirm, showGiftSelector, activeDiscovery, friendship, isPlundered, isFound, flagship?.crew]);
+
   // Handle Search
   const handleSearch = useCallback(() => {
-    const res = conductVillageSearch(village);
-    setActionLog(res.message);
-    if (res.success && res.discovery) {
-      setActiveDiscovery(res.discovery);
+    logger.info('VillageModal', `Search Party launched at ${village.name} (${village.id})`);
+    try {
+      const res = conductVillageSearch(village);
+      logger.info('VillageModal', `Search outcome at ${village.name}: ${res.success ? 'Success' : 'No finding'}`, {
+        message: res.message,
+        discovery: res.discovery?.name,
+        crewLost: res.crewLost,
+      });
+      setActionLog(res.message);
+      if (res.success && res.discovery) {
+        setActiveDiscovery(res.discovery);
+      }
+    } catch (err: any) {
+      logger.error('VillageModal', `Exception during search at ${village.name}: ${err.message}`, err);
+      setActionLog(`An error occurred while exploring: ${err.message}`);
     }
   }, [village]);
 
   // Handle Feast
   const handleFeast = useCallback(
     (giftType: 'food' | 'water' | 'cargo', cargoType?: string) => {
-      const res = conductVillageFeast(village, giftType, cargoType);
-      setActionLog(res.message);
-      if (res.newFriendship !== undefined) {
-        setFriendship(res.newFriendship);
+      logger.info('VillageModal', `Feast / Gift offered to ${village.name}`, { giftType, cargoType });
+      try {
+        const res = conductVillageFeast(village, giftType, cargoType);
+        logger.info('VillageModal', `Feast outcome at ${village.name}: ${res.message}`, {
+          newFriendship: res.newFriendship,
+        });
+        setActionLog(res.message);
+        if (res.newFriendship !== undefined) {
+          setFriendship(res.newFriendship);
+        }
+        setShowGiftSelector(false);
+      } catch (err: any) {
+        logger.error('VillageModal', `Exception during feast at ${village.name}: ${err.message}`, err);
+        setActionLog(`An error occurred while offering feast: ${err.message}`);
       }
-      setShowGiftSelector(false);
     },
     [village]
   );
 
   // Handle Plunder
   const handlePlunder = useCallback(() => {
-    const res = conductVillagePlunder(village);
-    setActionLog(res.message);
-    setFriendship(0);
-    setIsPlundered(true);
-    setShowPlunderConfirm(false);
+    logger.warn('VillageModal', `Plunder assault ordered against ${village.name} (${village.id})!`);
+    try {
+      const res = conductVillagePlunder(village);
+      logger.info('VillageModal', `Plunder outcome at ${village.name}: ${res.message}`, {
+        goldGained: res.goldGained,
+        foodGained: res.foodGained,
+        waterGained: res.waterGained,
+        crewLost: res.crewLost,
+      });
+      setActionLog(res.message);
+      setFriendship(0);
+      setIsPlundered(true);
+      setShowPlunderConfirm(false);
+    } catch (err: any) {
+      logger.error('VillageModal', `Exception during plunder of ${village.name}: ${err.message}`, err);
+      setActionLog(`An error occurred during plunder: ${err.message}`);
+    }
   }, [village]);
 
   // Handle Wait
   const handleWait = useCallback(() => {
-    const res = conductVillageWait(village);
-    setActionLog(res.message);
+    logger.info('VillageModal', `Rest & Wait clicked at ${village.name}`);
+    try {
+      const res = conductVillageWait(village);
+      logger.info('VillageModal', `Rest outcome at ${village.name}: ${res.message}`);
+      setActionLog(res.message);
+    } catch (err: any) {
+      logger.error('VillageModal', `Exception during rest at ${village.name}: ${err.message}`, err);
+      setActionLog(`An error occurred while resting: ${err.message}`);
+    }
   }, [village]);
 
   // Theme styling
@@ -108,7 +186,15 @@ export default function VillageModal({ village, onClose }: Props) {
   const badge = getFriendshipBadge();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md font-sans">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md font-sans pointer-events-auto select-none"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          logger.info('VillageModal', `Backdrop clicked for ${village.name}, closing modal.`);
+          onClose();
+        }
+      }}
+    >
       <div
         className={`relative w-full max-w-3xl rounded-2xl border-2 p-6 shadow-2xl bg-gradient-to-b ${getThemeBackground()} text-neutral-100 flex flex-col gap-5`}
       >
@@ -134,8 +220,11 @@ export default function VillageModal({ village, onClose }: Props) {
           </div>
           <button
             type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-lg border border-white/20 hover:bg-white/10 text-neutral-300 text-sm font-semibold transition-colors"
+            onClick={() => {
+              logger.info('VillageModal', `Leave Village button clicked for ${village.name}`);
+              onClose();
+            }}
+            className="px-3 py-1.5 rounded-lg border border-white/20 hover:bg-white/10 text-neutral-300 text-sm font-semibold transition-colors cursor-pointer"
           >
             ✕ Leave Village
           </button>
@@ -234,7 +323,7 @@ export default function VillageModal({ village, onClose }: Props) {
             className={`flex flex-col items-center justify-center p-3 rounded-xl border text-sm font-bold transition-all shadow-md ${
               isFound
                 ? 'bg-neutral-800/50 border-neutral-700 text-neutral-500 cursor-not-allowed'
-                : 'bg-emerald-900/80 hover:bg-emerald-800 border-emerald-500 text-emerald-100 hover:scale-[1.02] active:scale-[0.98]'
+                : 'bg-emerald-900/80 hover:bg-emerald-800 border-emerald-500 text-emerald-100 hover:scale-[1.02] active:scale-[0.98] cursor-pointer'
             }`}
           >
             <span className="text-xl mb-1">🔍</span>
@@ -246,7 +335,7 @@ export default function VillageModal({ village, onClose }: Props) {
           <button
             type="button"
             onClick={() => setShowGiftSelector((prev) => !prev)}
-            className="flex flex-col items-center justify-center p-3 rounded-xl border bg-amber-900/80 hover:bg-amber-800 border-amber-500 text-amber-100 hover:scale-[1.02] active:scale-[0.98] text-sm font-bold transition-all shadow-md"
+            className="flex flex-col items-center justify-center p-3 rounded-xl border bg-amber-900/80 hover:bg-amber-800 border-amber-500 text-amber-100 hover:scale-[1.02] active:scale-[0.98] text-sm font-bold transition-all shadow-md cursor-pointer"
           >
             <span className="text-xl mb-1">🍖</span>
             <span>Feast & Entertain</span>
@@ -257,7 +346,7 @@ export default function VillageModal({ village, onClose }: Props) {
           <button
             type="button"
             onClick={() => setShowPlunderConfirm(true)}
-            className="flex flex-col items-center justify-center p-3 rounded-xl border bg-red-950/80 hover:bg-red-900 border-red-600 text-red-200 hover:scale-[1.02] active:scale-[0.98] text-sm font-bold transition-all shadow-md"
+            className="flex flex-col items-center justify-center p-3 rounded-xl border bg-red-950/80 hover:bg-red-900 border-red-600 text-red-200 hover:scale-[1.02] active:scale-[0.98] text-sm font-bold transition-all shadow-md cursor-pointer"
           >
             <span className="text-xl mb-1">⚔️</span>
             <span>Plunder Village</span>
@@ -268,7 +357,7 @@ export default function VillageModal({ village, onClose }: Props) {
           <button
             type="button"
             onClick={handleWait}
-            className="flex flex-col items-center justify-center p-3 rounded-xl border bg-neutral-900/80 hover:bg-neutral-800 border-neutral-600 text-neutral-200 hover:scale-[1.02] active:scale-[0.98] text-sm font-bold transition-all shadow-md"
+            className="flex flex-col items-center justify-center p-3 rounded-xl border bg-neutral-900/80 hover:bg-neutral-800 border-neutral-600 text-neutral-200 hover:scale-[1.02] active:scale-[0.98] text-sm font-bold transition-all shadow-md cursor-pointer"
           >
             <span className="text-xl mb-1">⏳</span>
             <span>Rest & Wait</span>
@@ -286,7 +375,7 @@ export default function VillageModal({ village, onClose }: Props) {
               <button
                 type="button"
                 onClick={() => setShowGiftSelector(false)}
-                className="text-xs text-neutral-400 hover:text-white"
+                className="text-xs text-neutral-400 hover:text-white cursor-pointer"
               >
                 ✕ Cancel
               </button>
@@ -300,7 +389,7 @@ export default function VillageModal({ village, onClose }: Props) {
                 disabled={foodCount < 10}
                 className={`p-3 rounded-lg border text-left flex flex-col justify-between ${
                   foodCount >= 10
-                    ? 'bg-neutral-800 hover:bg-neutral-700 border-white/20'
+                    ? 'bg-neutral-800 hover:bg-neutral-700 border-white/20 cursor-pointer'
                     : 'bg-neutral-900 border-neutral-800 opacity-50 cursor-not-allowed'
                 }`}
               >
@@ -316,7 +405,7 @@ export default function VillageModal({ village, onClose }: Props) {
                 disabled={waterCount < 10}
                 className={`p-3 rounded-lg border text-left flex flex-col justify-between ${
                   waterCount >= 10
-                    ? 'bg-neutral-800 hover:bg-neutral-700 border-white/20'
+                    ? 'bg-neutral-800 hover:bg-neutral-700 border-white/20 cursor-pointer'
                     : 'bg-neutral-900 border-neutral-800 opacity-50 cursor-not-allowed'
                 }`}
               >
@@ -332,7 +421,7 @@ export default function VillageModal({ village, onClose }: Props) {
                     key={lux.type}
                     type="button"
                     onClick={() => handleFeast('cargo', lux.type)}
-                    className="p-3 rounded-lg border bg-amber-950/40 hover:bg-amber-900/50 border-amber-500/50 text-left flex flex-col justify-between"
+                    className="p-3 rounded-lg border bg-amber-950/40 hover:bg-amber-900/50 border-amber-500/50 text-left flex flex-col justify-between cursor-pointer"
                   >
                     <div className="text-xs font-bold text-amber-200">✨ 1 Crate {lux.name}</div>
                     <div className="text-[11px] text-neutral-300 mt-1">In Hold: {lux.quantity}</div>
@@ -362,14 +451,14 @@ export default function VillageModal({ village, onClose }: Props) {
               <button
                 type="button"
                 onClick={() => setShowPlunderConfirm(false)}
-                className="px-4 py-1.5 rounded-lg border border-white/20 text-xs font-semibold hover:bg-white/10"
+                className="px-4 py-1.5 rounded-lg border border-white/20 text-xs font-semibold hover:bg-white/10 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handlePlunder}
-                className="px-4 py-1.5 rounded-lg bg-red-700 hover:bg-red-600 text-white font-bold text-xs border border-red-400 shadow"
+                className="px-4 py-1.5 rounded-lg bg-red-700 hover:bg-red-600 text-white font-bold text-xs border border-red-400 shadow cursor-pointer"
               >
                 ⚔️ Order the Attack!
               </button>

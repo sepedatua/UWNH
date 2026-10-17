@@ -506,7 +506,7 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 select-none animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 select-none animate-fadeIn pointer-events-auto">
       <div className="relative w-[1140px] max-w-full bg-[#1b150e] border-4 border-[#8c6f4b] rounded-xl shadow-2xl flex flex-col overflow-hidden text-[#e6d5b8] font-mono">
         {/* Header */}
         <div className="bg-[#291e13] px-6 py-3 border-b-2 border-[#8c6f4b] flex justify-between items-center">

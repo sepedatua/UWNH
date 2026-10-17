@@ -11,11 +11,16 @@ const generateUsedShips = (portId: string) => {
   }
 
   const { industryId, industry } = port;
-  const shipPool = shipyardsToShips[industryId];
+  const shipPool = shipyardsToShips[industryId] || shipyardsToShips['1'];
 
-  const shipPoolMeetingRequirements = shipPool
+  let shipPoolMeetingRequirements = shipPool
     .filter(({ industryRequirement }) => industry >= industryRequirement)
     .map(({ shipId }) => shipId);
+
+  // If port industry is lower than all shipyard requirements, fallback to the lowest tier ship
+  if (shipPoolMeetingRequirements.length === 0) {
+    shipPoolMeetingRequirements = shipPool.length > 0 ? [shipPool[0].shipId] : ['1'];
+  }
 
   let amount = 2;
 
@@ -30,7 +35,8 @@ const generateUsedShips = (portId: string) => {
   const usedShips: UsedShips = {};
 
   for (let i = 0; i < amount; i += 1) {
-    usedShips[generateId()] = sample(shipPoolMeetingRequirements);
+    const pickedShip = sample(shipPoolMeetingRequirements) || shipPoolMeetingRequirements[0] || '1';
+    usedShips[generateId()] = pickedShip;
   }
 
   return usedShips;

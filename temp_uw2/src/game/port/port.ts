@@ -12,10 +12,26 @@ import {
 } from '../world/sharedUtils';
 import { TILE_SIZE } from '../../constants';
 import state from '../../state/state';
+import logger from '../../logger';
 
 const createPort = (portId: string) => {
-  const canvas = document.getElementById('camera') as HTMLCanvasElement;
-  const context = canvas.getContext('2d', { alpha: false })!;
+  const canvas = document.getElementById('camera') as HTMLCanvasElement | null;
+  if (!canvas) {
+    logger.warn('Port', `Cannot initialize port rendering for portId ${portId}: #camera canvas element not found.`);
+    return {
+      update: () => {},
+      draw: () => {},
+    };
+  }
+
+  const context = canvas.getContext('2d', { alpha: false });
+  if (!context) {
+    logger.error('Port', `Cannot initialize port rendering for portId ${portId}: Failed to get 2d context.`);
+    return {
+      update: () => {},
+      draw: () => {},
+    };
+  }
 
   const width = canvas.width / TILE_SIZE;
   const height = canvas.height / TILE_SIZE;

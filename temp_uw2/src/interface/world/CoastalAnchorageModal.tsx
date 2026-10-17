@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import state from '../../state/state';
 import { getPlayerFleet, getAvailableSpace } from '../../state/selectorsFleet';
 import {
@@ -14,6 +14,7 @@ import {
 import soundManager from '../sound/soundManager';
 import updateInterface from '../../state/updateInterface';
 import { generateId } from '../../utils';
+import logger from '../../logger';
 
 interface Props {
   coords: { x: number; y: number };
@@ -27,6 +28,29 @@ export default function CoastalAnchorageModal({ coords, onClose }: Props) {
   const [expeditionResult, setExpeditionResult] = useState<ExpeditionRawResult | null>(null);
   const [isForaging, setIsForaging] = useState(false);
   const [repairMessage, setRepairMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    logger.info('CoastalAnchorage', `Opened Coastal Anchorage at (${Math.round(coords.x)}, ${Math.round(coords.y)})`, {
+      canForage: coastStatus.canForage,
+      isDepleted: coastStatus.isDepleted,
+      dayAtSea: state.dayAtSea,
+    });
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        logger.info('CoastalAnchorage', '[Escape] pressed in Coastal Anchorage modal');
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      logger.info('CoastalAnchorage', 'Closed Coastal Anchorage modal');
+    };
+  }, [coords, onClose, coastStatus]);
 
   // Allocation selections when landing party returns
   const [waterAlloc, setWaterAlloc] = useState<number>(0);
@@ -181,7 +205,15 @@ export default function CoastalAnchorageModal({ coords, onClose }: Props) {
   const totalCrew = getPlayerFleet().reduce((sum, s) => sum + (s.crew || 0), 0);
 
   return (
-    <div className="absolute inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 pointer-events-auto font-sans select-none">
+    <div
+      className="absolute inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 pointer-events-auto font-sans select-none"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          logger.info('CoastalAnchorage', 'Backdrop clicked, closing Coastal Anchorage modal');
+          onClose();
+        }
+      }}
+    >
       <div className="max-w-2xl w-full bg-[#1c140d] border-2 border-[#b89558] rounded-2xl shadow-[0_0_50px_rgba(234,179,8,0.35)] overflow-hidden text-[#ede0cb] p-6 flex flex-col max-h-[92vh]">
         
         {/* Header */}
