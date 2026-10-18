@@ -96,7 +96,7 @@ export default function SwordDuelModal({ duelState, onDuelConcluded }: Props) {
             </div>
 
             <div className="text-xs text-neutral-300 space-y-1 font-mono mt-auto">
-              <div>Blade: <span className="text-yellow-300">{playerFighter.weaponName}</span></div>
+              <div>Blade: <span className="text-yellow-300">{playerFighter.weaponName}</span> <span className="text-[10px] text-amber-400">({playerFighter.weaponCategory})</span></div>
               <div>Armor: <span className="text-neutral-400">{playerFighter.armorName}</span></div>
               <div>Swordsmanship: <span className="text-blue-400">{playerFighter.swordsmanship}</span></div>
             </div>
@@ -133,7 +133,7 @@ export default function SwordDuelModal({ duelState, onDuelConcluded }: Props) {
             </div>
 
             <div className="text-xs text-neutral-300 space-y-1 font-mono mt-auto">
-              <div>Blade: <span className="text-yellow-300">{enemyFighter.weaponName}</span></div>
+              <div>Blade: <span className="text-yellow-300">{enemyFighter.weaponName}</span> <span className="text-[10px] text-red-400">({enemyFighter.weaponCategory})</span></div>
               <div>Armor: <span className="text-neutral-400">{enemyFighter.armorName}</span></div>
               <div>Swordsmanship: <span className="text-red-400">{enemyFighter.swordsmanship}</span></div>
             </div>
@@ -154,6 +154,11 @@ export default function SwordDuelModal({ duelState, onDuelConcluded }: Props) {
 
         {/* Interactive Stance Selection Bar */}
         <div className="p-6 bg-neutral-900">
+          {lastRoundText && !winner && (
+            <div className="mb-3 px-3 py-1.5 rounded bg-yellow-950/40 border border-yellow-700/50 text-xs text-yellow-300 text-center font-mono">
+              {lastRoundText}
+            </div>
+          )}
           {winner ? (
             <div className="text-center py-2">
               <div className="text-2xl font-extrabold uppercase tracking-widest animate-pulse mb-1">

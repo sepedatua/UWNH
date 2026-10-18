@@ -23,9 +23,10 @@ import soundManager from '../sound/soundManager';
 import { generateId } from '../../utils';
 import CoastalAnchorageModal from './CoastalAnchorageModal';
 import { checkCoastStatus, CoastStatus } from '../../game/world/coastalForageEngine';
-import { Village, getNearbyVillage } from '../../data/villageData';
+import { Village } from '../../data/villageData';
 import VillageModal from './VillageModal';
 import { checkLookoutSightings } from '../../game/discovery/lookoutEngine';
+import { getMates } from '../../state/selectors';
 import logger from '../../logger';
 
 export default function SailingHUD() {
@@ -517,7 +518,12 @@ export default function SailingHUD() {
         <div className="absolute bottom-5 left-5 pointer-events-auto bg-neutral-950/85 backdrop-blur-md border border-neutral-700/80 rounded-lg px-4 py-2.5 shadow-lg text-white">
           <div className="flex items-center gap-2 text-xs text-neutral-400 mb-0.5">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>NAVIGATION SEXTANT</span>
+            <span>
+              {(() => {
+                const navMate = getMates().find((m) => m.role === 'chiefNavigator');
+                return navMate ? `🧭 CHIEF NAVIGATOR: ${navMate.name}` : 'NAVIGATION SEXTANT';
+              })()}
+            </span>
           </div>
           <div className="text-base font-bold text-yellow-300 font-mono tracking-wide">
             {navCoords.nav}

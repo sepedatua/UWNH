@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  calculateCannonballArcPosition,
   getBroadsideHexes,
   getHexWindDelta,
   HEX_DIRECTIONS,
@@ -9,6 +10,11 @@ import {
   hexNeighbor,
   hexToPixel,
   pixelToHex,
+  pixelToStaggered,
+  staggeredBroadsideHexes,
+  staggeredDistance,
+  staggeredNeighbor,
+  staggeredToPixel,
 } from './hexUtils';
 
 describe('hexUtils', () => {
@@ -67,5 +73,74 @@ describe('hexUtils', () => {
     expect(getHexWindDelta(0, 3)).toBe(3); // Direct headwind
     expect(getHexWindDelta(1, 4)).toBe(3);
     expect(getHexWindDelta(0, 5)).toBe(1); // Adjacent wrap
+  });
+
+  /* Milestone 14: Koei 52x48 Staggered Column Hex Geometry Tests */
+  test('staggeredNeighbor finds correct 6 directional neighbors on even and odd columns', () => {
+    const evenCol = { q: 10, r: 10 };
+    // North
+    expect(staggeredNeighbor(evenCol, 0)).toEqual({ q: 10, r: 9 });
+    // South
+    expect(staggeredNeighbor(evenCol, 3)).toEqual({ q: 10, r: 11 });
+    // NE (even col has r - 1)
+    expect(staggeredNeighbor(evenCol, 1)).toEqual({ q: 11, r: 9 });
+
+    const oddCol = { q: 11, r: 10 };
+    // North
+    expect(staggeredNeighbor(oddCol, 0)).toEqual({ q: 11, r: 9 });
+    // NE (odd col shifted down, so NE is at same row r)
+    expect(staggeredNeighbor(oddCol, 1)).toEqual({ q: 12, r: 10 });
+    // SE (odd col SE is r + 1)
+    expect(staggeredNeighbor(oddCol, 2)).toEqual({ q: 12, r: 11 });
+  });
+
+  test('staggeredDistance accurately computes cube-distance on staggered grid', () => {
+    expect(staggeredDistance({ q: 10, r: 10 }, { q: 10, r: 10 })).toBe(0);
+    // Adjacent neighbor distance is exactly 1
+    const neighbor = staggeredNeighbor({ q: 10, r: 10 }, 1);
+    expect(staggeredDistance({ q: 10, r: 10 }, neighbor)).toBe(1);
+
+    // Multi-step distance
+    expect(staggeredDistance({ q: 0, r: 0 }, { q: 0, r: 5 })).toBe(5);
+  });
+
+  test('staggeredToPixel and pixelToStaggered convert coordinates with half-tile odd shift', () => {
+    const hex = { q: 5, r: 8 }; // odd column
+    const pixel = staggeredToPixel(hex.q, hex.r, 0, 0, 32);
+    expect(pixel.x).toBe(5 * 32);
+    expect(pixel.y).toBe(8 * 32 + 16); // +16px half-tile vertical shift
+
+    const reconverted = pixelToStaggered({ x: pixel.x + 10, y: pixel.y + 10 }, 0, 0, 32);
+    expect(reconverted).toEqual(hex);
+  });
+
+  test('staggeredBroadsideHexes traces port and starboard firing lines', () => {
+    const center = { q: 20, r: 20 };
+    const { port, starboard } = staggeredBroadsideHexes(center, 0, 3); // Facing North
+
+    // Facing North (0): Port is NW (5) and SW (4) side, Starboard is NE (1) and SE (2) side
+    expect(port.length).toBe(6); // 2 dirs * 3 range
+    expect(starboard.length).toBe(6);
+    expect(port.some((h) => h.q === center.q && h.r === center.r)).toBe(false);
+  });
+
+  test('calculateCannonballArcPosition computes parabolic vertical lift at midpoint', () => {
+    const from = { x: 100, y: 100 };
+    const to = { x: 300, y: 100 };
+
+    // At progress t = 0: exactly at origin
+    const start = calculateCannonballArcPosition(from, to, 0);
+    expect(start.x).toBe(100);
+    expect(start.y).toBe(100);
+
+    // At progress t = 1: exactly at destination
+    const end = calculateCannonballArcPosition(from, to, 1);
+    expect(end.x).toBe(300);
+    expect(end.y).toBe(100);
+
+    // At progress t = 0.5: apex with negative Y (lifted upwards)
+    const mid = calculateCannonballArcPosition(from, to, 0.5);
+    expect(mid.x).toBe(200);
+    expect(mid.y).toBeLessThan(100); // Lifted vertically by arc
   });
 });

@@ -14,6 +14,8 @@ import {
   getPlayerFleet,
   getDaysProvisionsWillLast,
 } from '../../../state/selectorsFleet';
+import { getFirstMateId } from '../../../state/selectors';
+import gameState from '../../../state/state';
 import HarborSummary from './HarborSummary';
 
 const harborOptions = ['Sail', 'Supply', 'Moor'] as const;
@@ -54,30 +56,48 @@ export default function Harbor() {
       const days = getDaysProvisionsWillLast();
 
       if (days > 0) {
-        characterMessage = {
-          body:
-            days >= 10
-              ? `We can sail for ${days} days. Shall we cast off?`
-              : 'We won’t be able to sail for long. Shall we cast off anyway?',
-          characterId: '32',
-          confirm: {
-            yes: () => {
-              setSail();
+        const fleet = getPlayerFleet();
+        const uncrewedConsort = fleet.slice(1).find((_, idx) => {
+          return !gameState.mates.some((m) => m.role === idx + 1);
+        });
+
+        if (uncrewedConsort) {
+          characterMessage = {
+            body: `Commodore, ${uncrewedConsort.name} has no captain appointed! Our squadron will flounder in naval combat without an officer at the helm. Shall we cast off anyway?`,
+            characterId: getFirstMateId(),
+            confirm: {
+              yes: () => {
+                setSail();
+              },
+              no: back,
             },
-            no: back,
-          },
-        };
+          };
+        } else {
+          characterMessage = {
+            body:
+              days >= 10
+                ? `We can sail for ${days} days. Shall we cast off?`
+                : 'We won’t be able to sail for long. Shall we cast off anyway?',
+            characterId: getFirstMateId(),
+            confirm: {
+              yes: () => {
+                setSail();
+              },
+              no: back,
+            },
+          };
+        }
       } else {
         characterMessage = {
           body: 'We’ll starve if we leave with no provisions!',
-          characterId: '32',
+          characterId: getFirstMateId(),
           acknowledge: back,
         };
       }
     } else {
       characterMessage = {
         body: 'Some ships have no crew assigned. We won’t get anywhere.',
-        characterId: '32',
+        characterId: getFirstMateId(),
         acknowledge: back,
       };
     }

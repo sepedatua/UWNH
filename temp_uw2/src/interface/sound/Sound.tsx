@@ -22,6 +22,11 @@ import emptyEyes from './assets/empty-eyes.ogg';
 import theMahout from './assets/the-mahout.ogg';
 import landOfLuxury from './assets/land-of-luxury.ogg';
 import moslemDance from './assets/moslem-dance.ogg';
+import windAhead from './assets/wind-ahead.ogg';
+import theChase from './assets/the-chase.ogg';
+import capturingEnemiesShips from './assets/capturing-enemies-ships.ogg';
+import victoryInANavalBattle from './assets/victory-in-a-naval-battle.ogg';
+import defeatedGameOver from './assets/defeated-game-over.ogg';
 
 const getAudioElement = () => {
   const audio = new Audio();
@@ -30,7 +35,29 @@ const getAudioElement = () => {
   return audio;
 };
 
-const getTrackInfo = ({ portId, buildingId }: Props): { src: string; key: string } => {
+const getTrackInfo = ({
+  portId,
+  buildingId,
+  inCombat,
+}: Props): { src: string; key: string } => {
+  const battlePhase = soundManager.getBattlePhase();
+
+  if (inCombat || battlePhase !== null) {
+    if (battlePhase === 'prize') {
+      return { src: capturingEnemiesShips, key: 'capturingEnemiesShips' };
+    }
+    if (battlePhase === 'victory') {
+      return { src: victoryInANavalBattle, key: 'victoryInANavalBattle' };
+    }
+    if (battlePhase === 'defeat') {
+      return { src: defeatedGameOver, key: 'defeatedGameOver' };
+    }
+    if (battlePhase === 'theChase') {
+      return { src: theChase, key: 'theChase' };
+    }
+    return { src: windAhead, key: 'windAhead' };
+  }
+
   if (portId === null) {
     return { src: themeOfJoao, key: 'themeOfJoao' };
   }
@@ -79,9 +106,10 @@ const getTrackInfo = ({ portId, buildingId }: Props): { src: string; key: string
 interface Props {
   portId: string | null;
   buildingId: string | null;
+  inCombat?: boolean;
 }
 
-export default function Sound({ portId, buildingId }: Props) {
+export default function Sound({ portId, buildingId, inCombat }: Props) {
   const audioRef = useRef(getAudioElement());
   const trackRef = useRef<string | null>(null);
 
@@ -112,6 +140,7 @@ export default function Sound({ portId, buildingId }: Props) {
     const { src, key } = getTrackInfo({
       portId,
       buildingId,
+      inCombat,
     });
 
     soundManager.setCurrentTrackKey(key);
@@ -123,7 +152,7 @@ export default function Sound({ portId, buildingId }: Props) {
         void audioRef.current.play();
       }
     }
-  }, [portId, buildingId, hasPlayed]);
+  }, [portId, buildingId, inCombat, hasPlayed]);
 
   useEffect(() => {
     if (hasPlayed) {

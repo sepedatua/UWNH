@@ -20,6 +20,7 @@ interface Props {
   buildingId: string | null;
   timePassed: number;
   gold: number;
+  inCombat?: boolean;
   children?: ReactNode;
 }
 
@@ -28,6 +29,7 @@ export default function Left({
   buildingId,
   timePassed,
   gold,
+  inCombat = false,
   children = null,
 }: Props) {
   const [dayAtSea, setDayAtSea] = useState(0);
@@ -68,7 +70,7 @@ export default function Left({
         </Popover>
       </div>
       <div className="p-5 text-right">
-        <Sound portId={portId} buildingId={buildingId} />
+        <Sound portId={portId} buildingId={buildingId} inCombat={inCombat} />
       </div>
     </div>
   );

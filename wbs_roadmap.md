@@ -413,3 +413,73 @@
   - Rendered green village settlement pins and Lookout duty percentage badge on `[M]` World Atlas.
   - Full save/load persistence for `crewAssignment`, `discoveredVillages`, and `discoveredSupplyPorts`. **[PLAYABLE MILESTONE: Authentic Koei Lookout proximity detection, pulsing green village squares, +50 discovery fame, and crew duty allocation!]**
 
+---
+
+## Milestone 14: Authentic Koei Naval Combat, Flagship Tactics & Prize Capture System (Sprint 15)
+*Goal: High-fidelity reproduction of Koei's classic naval battle system from Uncharted Waters: New Horizons. Overhaul the abstract hex wargame into the authentic 52x48 staggered-column hex grid with a 13x12 scrollable tactical viewport, authentic ballistic arc cannon animations with shot consumption and subsystem damage, Flagship Tactics (Plan & Order menus) with autonomous consort fleet AI, authentic 1v1 captain sword duels linked to real character inventory with the authentic Luck/Crew challenge formula, post-battle prize vessel capture with mate assignment and cargo looting, and authentic 16-bit Koei maritime battle audio.*
+
+- [x] **Task 14.1: Audio Pipeline & Battle State Persistence** (Completed)
+  - Downloaded and registered authentic Koei battle audio assets (*Wind Ahead*, *The Chase*, *Capturing Enemies' Ships*, *Victory in a Naval Battle*, *Defeated Game Over*, and authentic cannon/duel SFX).
+  - Connected combat state to `SoundManager` and `Sound.tsx` with dynamic battle phase tracking (`battle`, `prize`, `victory`, `defeat`, `theChase`).
+  - Implemented two-way battle state persistence (`syncCombatResultsToGameState`, `finalizeCombatResults`): write back final hull durability and crew casualties to `state.fleets[1].ships`, remove sunk consort vessels from the fleet roster, and deduct Shot (`shot`) ammunition from cargo holds when firing broadsides.
+  - Bound captain duel equipment to scan real inventory items (`state.items`) for authentic weapons and armors with category identification (`Straight Sword`, `Fencing Sword`, `Curved Sword`, `Heavy Sword`, `Armor`).
+
+- [x] **Task 14.2: Authentic 52x48 Staggered Hex Arena & Dual-Viewport Tactical HUD** (Completed)
+  - Refactored `hexUtils.ts` to implement the authentic Koei 52x48 staggered column grid with 32x32 pixel tiles (odd columns shifted 16px down) and 6 compass headings (0: N, 1: NE, 2: SE, 3: S, 4: SW, 5: NW) with cube coordinate distance mapping.
+  - Built dual-viewport battle interface in `BattleArena.tsx`: 13x12 scrollable main canvas viewport centered on the active ship plus right-hand tactical frame containing full 52x48 mini-map with ship blips, wind direction dial, flagship card, command menu, and parchment message log.
+  - Implemented authentic ship sprite rendering across all 6 directional headings with wake effects, sunken wreck markers, active ship pulsing ring, and targeting reticles.
+
+- [x] **Task 14.3: Ballistics Arc Engine, Ammunition & Subsystem Damage** (Completed)
+  - Implemented parabolic cannonball trajectory animation using Koei's authentic vertical lift and fall ballistics formulas with apex arc calculation.
+  - Implemented gun range constraints and damage scaling across authentic Koei artillery types: Normal, Culverin, Carronade, Pedrero, Saker, Demi-Culverin, Cannon.
+  - Subsystem damage model: hull durability reduction, crew casualties, rigging/mast damage (reducing ship movement points/power), dismounted guns, and gunnery skill bonuses.
+  - Enforced cargo ammunition checks requiring at least 1 unit of Shot per firing volley with automatic fleet hold deduction.
+
+- [x] **Task 14.4: Flagship Tactics (Plan & Order Menus) & Consort Autonomous AI** (Completed)
+  - Flagship **Plan** (全体方針) menu: set fleet-wide behavioral directives (Aggressive Attack & Chase, Screen & Defend Flagship, Disengage and Escape).
+  - Flagship **Order** (個別指示) menu: designate specific enemy targets for consort ships, commanding them to attack, escape, focus cannons, or rush for boarding.
+  - Autonomous Consort AI engine (`executeConsortAITurn`): player-owned consort ships (ships 2–10) and enemy fleet ships automatically execute movement, positioning, broadsides, and boarding according to assigned orders, fleet plans, and wind conditions.
+  - Perimeter Escape mechanic (`fleeShip`): ships reaching the grid boundary can successfully flee from battle.
+
+- [x] **Task 14.5: Authentic 1v1 Captain Duel & Post-Battle Prize Capture System** (Completed)
+  - Authentic challenge formula check: flagship boarding evaluates `playerCrew + random(playerLuck) >= enemyCrew`; if failed, enemy crew blocks the challenge and resolves as deck melee.
+  - Authentic 1v1 duel system (`SwordDuelModal.tsx` & `duelEngine.ts`): 0–200 balance meter, weapon family mechanics (Fencing +25% thrust, Curved +25% slash, Heavy +25% strike, Straight +5% balanced), armor damage absorption, and authentic duel sound effects.
+  - Post-Battle Prize Capture screen (`PrizeCaptureModal.tsx`): plays authentic *Capturing Enemies' Ships* BGM, displays captured enemy vessels, allows assigning available mates as captains, looting cargo/provisions/gold, recruiting surviving sailors, and scuttling unwanted hulls. **[PLAYABLE MILESTONE: Authentic Koei naval battles, 52x48 staggered hex grid, parabolic ballistics, flagship tactics, 1v1 captain sword duels, and prize vessel capture!]**
+
+---
+
+## Milestone 15: Tavern Mate Recruitment, Fleet Captain Appointment & Bridge Officer System (Sprint 16)
+*Goal: Authentic Koei Uncharted Waters 2 mate/navigator recruitment system in global taverns and pubs; interactive appointment of captains for newly purchased, built, or prize-captured consort vessels in the fleet; full bridge officer post assignment (First Mate, Chief Navigator, Bookkeeper, Chief Lookout, Reserve Navigator); and gameplay integrations (harbor departure readiness warnings, dynamic first mate dialogue, celestial navigation HUD indicators, and fleet battle performance).*
+
+- [x] **Task 15.1: Global Tavern Mate Roster & Koei Character Porting (`tavernMates.ts`, `sailorData.ts`, `characterData.ts`)** (Completed)
+  - Ported and registered authentic Koei navigators (IDs 40–51: Miguel Leal, Anthony Sherley, Cesare Fedrici, Lawrence Edward, Zaganos, Diego Silva, Jean Lafitte, Pierino, Duarte Barbosa, Fernao Mendes, Vasco de Ataide, Alfonso de Albuquerque) with authentic stats, levels, and skills.
+  - Mapped unemployed navigators across 16 authentic global port taverns (Lisbon, Seville, Barcelona, Algiers, Marseille, Genoa, Venice, Istanbul, Nantes, London, Bristol, Amsterdam, Mozambique, Goa, Calicut, Macao).
+  - Defined authentic recruitment requirements: signing bonus gold, monthly wages, required total fame threshold, and personality dialogue quotes.
+
+- [x] **Task 15.2: Tavern Recruitment Flow & Appraisal Modal (`Pub.tsx` & `MateRecruitModal.tsx`)** (Completed)
+  - Added dynamic `Recruit Mate` option in the Pub/Tavern menu whenever an unhired navigator is visiting the local establishment.
+  - Created high-fidelity 16-bit Koei navigator appraisal dialog displaying authentic portrait slice, age, navigation/battle levels, stat gauges (Leadership, Strength, Charm, Intellect, Intuition), skill badges, and signing terms.
+  - Implemented authentic Koei recruitment formula: checks protagonist Fame + Leadership + Gold against navigator pride, softened by 25% when the player treats the tavern patrons to wine.
+
+- [x] **Task 15.3: Fleet Duty & Bridge Officer Post Assignment (`Mates.tsx` & `tavernMates.ts`)** (Completed)
+  - Replaced rudimentary lookout toggle with a comprehensive, authentic Koei Duty Assignment modal.
+  - Supported all authentic Koei fleet posts:
+    - **Consort Ship Captains**: Appoint any mate to command any consort vessel in the fleet (Ship #2 to #10).
+    - **First Mate**: Second-in-command providing harbor readiness advisories and voyage warnings.
+    - **Chief Navigator**: Oversees sextants and celestial bearings.
+    - **Bookkeeper**: Financial accountant managing market tariffs and commodity tracking.
+    - **Chief Lookout**: Crow's nest watch officer boosting spotting horizon for villages, supply ports, and hazards.
+    - **Reserve Navigator**: Off-duty passenger awaiting fleet command.
+  - Enforced 1-to-1 uniqueness swapping: assigning a post automatically relieves the previous holder without data collisions.
+
+- [x] **Task 15.4: Interactive Consort Captaincy on Fleet Ships Roster (`Fleet.tsx`)** (Completed)
+  - Added dedicated Captain indicator badges on ship cards in the Ships tab of the Fleet Roster.
+  - Displays assigned captain's name, Navigation Level, and Battle Level for each vessel.
+  - Prominently flags uncrewed consort vessels with `⚠️ No Captain Appointed!` alert and an interactive `[+ Appoint Captain]` modal allowing one-click appointment from the active officer roster.
+
+- [x] **Task 15.5: Gameplay Integrations & Departure Warnings (`Harbor.tsx`, `SailingHUD.tsx`, `selectors.ts`)** (Completed)
+  - Updated `getFirstMateId()` to dynamically resolve the appointed First Mate (or fallback to Rocco), powering authentic harbor departure dialogue.
+  - Added harbor departure safety check: First Mate warns the Commodore if any consort vessel has no captain appointed before casting off into potentially hostile waters.
+  - Connected Chief Navigator to the Sailing HUD's bottom-left sextant indicator, displaying the navigator's name alongside celestial coordinates.
+  - Comprehensive unit test suite (`tavernMates.test.ts`) validating directory retrieval, recruitment formula, treat morale discount, 1-to-1 role swapping, and captaincy persistence. **[PLAYABLE MILESTONE: Authentic tavern mate recruitment, consort ship captaincy, and bridge officer post assignment across the seven seas!]**
+

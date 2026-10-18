@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'vitest';
+import state from '../../state/state';
 import {
+  checkDuelChallengeSuccess,
   createDuelState,
   evaluateStanceAdvantage,
   executeDuelRound,
+  getPlayerDuelEquipment,
 } from './duelEngine';
 
 describe('duelEngine', () => {
@@ -51,5 +54,27 @@ describe('duelEngine', () => {
       expect(result.isGameOver).toBe(true);
       expect(result.winner).toBe('player');
     }
+  });
+
+  /* Milestone 14: Authentic Koei Equipment Synergy & Challenge Formula Tests */
+  test('checkDuelChallengeSuccess evaluates player crew, luck, and enemy crew', () => {
+    // When player crew is large, challenge should reliably succeed
+    const guaranteed = checkDuelChallengeSuccess(100, 50, 20);
+    expect(guaranteed).toBe(true);
+
+    // When enemy crew is overwhelmingly large and player has minimal crew & 0 luck, challenge should fail
+    const blocked = checkDuelChallengeSuccess(5, 0, 150);
+    expect(blocked).toBe(false);
+  });
+
+  test('getPlayerDuelEquipment detects best weapon category and armor from state.items', () => {
+    // Reset state items with authentic Crusader Sword (Fencing Sword, ID 77) and Crusader Armor (Armor, ID 76)
+    state.items = ['77', '76'];
+    const eq = getPlayerDuelEquipment();
+    expect(eq.weaponName).toBe('Crusader Sword');
+    expect(eq.weaponCategory).toBe('Fencing Sword');
+    expect(eq.weaponPower).toBe(40);
+    expect(eq.armorName).toBe('Crusader Armor');
+    expect(eq.armorDefense).toBe(70);
   });
 });

@@ -194,7 +194,9 @@ export const getRoleDisplay = (role: Role) => {
   return `Captain of ${shipName}`;
 };
 
-// TODO needs to be implemented
-export const getFirstMateId = () => '32';
+export const getFirstMateId = () => {
+  const firstMate = (state.mates || []).find((m) => m.role === 'firstMate');
+  return firstMate ? firstMate.sailorId : '32';
+};
 
 export const isLisbon = () => state.portId === '1';

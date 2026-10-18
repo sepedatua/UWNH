@@ -7,8 +7,26 @@
  * - Independent Master, Music, and SFX volume controls with LocalStorage persistence
  */
 
+import cannonSfx from './assets/cannon.ogg';
+import boardingSfx from './assets/boarding.ogg';
+import duelHitSfx from './assets/duel-hit.ogg';
+import duelMissSfx from './assets/duel-miss.ogg';
+import shoutSfx from './assets/shout.ogg';
+
 export type SoundtrackMode = 'orchestrated' | 'fm_synth';
-export type SfxType = 'cannon' | 'coin' | 'bell' | 'shipBell' | 'sword' | 'waves' | 'fanfare' | 'click';
+export type SfxType =
+  | 'cannon'
+  | 'coin'
+  | 'bell'
+  | 'shipBell'
+  | 'sword'
+  | 'waves'
+  | 'fanfare'
+  | 'click'
+  | 'boarding'
+  | 'duelHit'
+  | 'duelMiss'
+  | 'shout';
 
 export interface TrackMetadata {
   id: string;
@@ -16,6 +34,14 @@ export interface TrackMetadata {
   composer: string;
   description: string;
 }
+
+export const SFX_ASSETS: Partial<Record<SfxType, string>> = {
+  cannon: cannonSfx,
+  boarding: boardingSfx,
+  duelHit: duelHitSfx,
+  duelMiss: duelMissSfx,
+  shout: shoutSfx,
+};
 
 export const TRACK_METADATA: Record<string, TrackMetadata> = {
   mastInTheMist: {
@@ -72,6 +98,36 @@ export const TRACK_METADATA: Record<string, TrackMetadata> = {
     composer: 'Yoko Kanno',
     description: 'Ottoman Empire & Middle East Bazaars',
   },
+  windAhead: {
+    id: 'windAhead',
+    title: 'Wind Ahead',
+    composer: 'Yoko Kanno',
+    description: 'Naval Combat & Fleet Cannon Fire',
+  },
+  theChase: {
+    id: 'theChase',
+    title: 'The Chase',
+    composer: 'Yoko Kanno',
+    description: 'Pursuit & Battle Interception',
+  },
+  capturingEnemiesShips: {
+    id: 'capturingEnemiesShips',
+    title: "Capturing Enemies' Ships",
+    composer: 'Yoko Kanno',
+    description: 'Prize Ship Capture & Spoils of War',
+  },
+  victoryInANavalBattle: {
+    id: 'victoryInANavalBattle',
+    title: 'Victory in a Naval Battle',
+    composer: 'Yoko Kanno',
+    description: 'Naval Triumph & Fanfare',
+  },
+  defeatedGameOver: {
+    id: 'defeatedGameOver',
+    title: 'Defeated (Game Over)',
+    composer: 'Yoko Kanno',
+    description: 'Flagship Lost at Sea',
+  },
 };
 
 class SoundManager {
@@ -89,11 +145,21 @@ class SoundManager {
   private isMuted = false;
   private mode: SoundtrackMode = 'orchestrated';
   private currentTrackKey = 'themeOfJoao';
+  private battlePhase: 'battle' | 'prize' | 'victory' | 'defeat' | 'theChase' | null = null;
 
   private listeners: Set<() => void> = new Set();
 
   constructor() {
     this.loadSettings();
+  }
+
+  public setBattlePhase(phase: 'battle' | 'prize' | 'victory' | 'defeat' | 'theChase' | null) {
+    this.battlePhase = phase;
+    this.notify();
+  }
+
+  public getBattlePhase(): 'battle' | 'prize' | 'victory' | 'defeat' | 'theChase' | null {
+    return this.battlePhase;
   }
 
   private initAudio() {
@@ -156,11 +222,32 @@ class SoundManager {
   public playSfx(type: SfxType) {
     this.initAudio();
     this.ensureContextRunning();
-    if (!this.audioCtx || !this.sfxGainNode || this.isMuted) return;
+    if (this.isMuted) return;
 
-    const ctx = this.audioCtx;
-    const now = ctx.currentTime;
+    const assetUrl = SFX_ASSETS[type];
+    if (assetUrl && typeof Audio !== 'undefined') {
+      try {
+        const audio = new Audio(assetUrl);
+        audio.volume = this.sfxVolume * this.masterVolume;
+        const playPromise = audio.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(() => {
+            if (this.audioCtx) {
+              this.playSynthFallback(type, this.audioCtx, this.audioCtx.currentTime);
+            }
+          });
+        }
+        return;
+      } catch {
+        // Fallback to Web Audio synthesis below
+      }
+    }
 
+    if (!this.audioCtx || !this.sfxGainNode) return;
+    this.playSynthFallback(type, this.audioCtx, this.audioCtx.currentTime);
+  }
+
+  private playSynthFallback(type: SfxType, ctx: AudioContext, now: number) {
     switch (type) {
       case 'cannon':
         this.synthCannon(ctx, now);
@@ -173,16 +260,20 @@ class SoundManager {
         this.synthBell(ctx, now);
         break;
       case 'sword':
+      case 'duelHit':
         this.synthSword(ctx, now);
         break;
+      case 'duelMiss':
+      case 'click':
+        this.synthClick(ctx, now);
+        break;
       case 'waves':
+      case 'boarding':
         this.synthWaves(ctx, now);
         break;
       case 'fanfare':
+      case 'shout':
         this.synthFanfare(ctx, now);
-        break;
-      case 'click':
-        this.synthClick(ctx, now);
         break;
     }
   }

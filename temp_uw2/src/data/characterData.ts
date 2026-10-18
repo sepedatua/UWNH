@@ -70,6 +70,54 @@ const characterData: { [key: string]: Character } = {
     name: 'Salim',
     color: 'text-amber-800',
   },
+  '40': {
+    name: 'Miguel Leal',
+    color: 'text-blue-800',
+  },
+  '41': {
+    name: 'Anthony Sherley',
+    color: 'text-red-700',
+  },
+  '42': {
+    name: 'Cesare Fedrici',
+    color: 'text-purple-700',
+  },
+  '43': {
+    name: 'Lawrence Edward',
+    color: 'text-emerald-700',
+  },
+  '44': {
+    name: 'Zaganos',
+    color: 'text-amber-900',
+  },
+  '45': {
+    name: 'Diego Silva',
+    color: 'text-orange-800',
+  },
+  '46': {
+    name: 'Jean Lafitte',
+    color: 'text-indigo-700',
+  },
+  '47': {
+    name: 'Pierino',
+    color: 'text-cyan-700',
+  },
+  '48': {
+    name: 'Duarte Barbosa',
+    color: 'text-teal-800',
+  },
+  '49': {
+    name: 'Fernao Mendes',
+    color: 'text-blue-900',
+  },
+  '50': {
+    name: 'Vasco de Ataide',
+    color: 'text-red-900',
+  },
+  '51': {
+    name: 'Alfonso de Albuquerque',
+    color: 'text-yellow-700',
+  },
   '98': {
     name: 'Carlotta, Owner of the Pub',
     color: 'text-amber-600',

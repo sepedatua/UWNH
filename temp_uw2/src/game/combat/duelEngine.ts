@@ -5,6 +5,8 @@ import {
   DuelState,
 } from './combatTypes';
 import soundManager from '../../interface/sound/soundManager';
+import state from '../../state/state';
+import { itemData, itemCategories, Item } from '../../data/itemData';
 
 export interface DuelRoundResult {
   playerStance: AttackerStance;
@@ -16,6 +18,76 @@ export interface DuelRoundResult {
   isGameOver: boolean;
   winner: 'player' | 'enemy' | null;
 }
+
+/**
+ * Scans player inventory (state.items) for the highest-rated weapon and armor.
+ * Authentic Koei UW2 categories:
+ *  1: Straight Sword, 2: Fencing Sword, 3: Curved Sword, 4: Heavy Sword, 7: Armor
+ */
+export interface PlayerDuelEquipment {
+  weapon: Item | null;
+  weaponPower: number;
+  weaponCategory: 'Straight Sword' | 'Fencing Sword' | 'Curved Sword' | 'Heavy Sword';
+  weaponName: string;
+  armor: Item | null;
+  armorDefense: number;
+  armorName: string;
+}
+
+export const getPlayerDuelEquipment = (): PlayerDuelEquipment => {
+  const items = state.items || [];
+  let bestWeapon: Item | null = null;
+  let bestWeaponRating = 0;
+  let bestArmor: Item | null = null;
+  let bestArmorRating = 0;
+
+  items.forEach((itemId) => {
+    const item = itemData[itemId];
+    if (!item) return;
+
+    if (['1', '2', '3', '4'].includes(item.categoryId)) {
+      if (item.rating > bestWeaponRating) {
+        bestWeaponRating = item.rating;
+        bestWeapon = item;
+      }
+    }
+
+    if (item.categoryId === '7') {
+      if (item.rating > bestArmorRating) {
+        bestArmorRating = item.rating;
+        bestArmor = item;
+      }
+    }
+  });
+
+  const categoryName = bestWeapon
+    ? (itemCategories[bestWeapon.categoryId as keyof typeof itemCategories] as any)
+    : 'Straight Sword';
+
+  return {
+    weapon: bestWeapon,
+    weaponPower: bestWeapon ? bestWeapon.rating : 15,
+    weaponCategory: categoryName || 'Straight Sword',
+    weaponName: bestWeapon ? bestWeapon.name : 'Sturdy Sailor Dagger',
+    armor: bestArmor,
+    armorDefense: bestArmor ? bestArmor.rating : 0,
+    armorName: bestArmor ? bestArmor.name : 'Cloth Jerkin',
+  };
+};
+
+/**
+ * Authentic Koei Duel Challenge Formula:
+ * Challenge succeeds if:
+ *   playerCrew + random(playerLuck) >= enemyCrew
+ */
+export const checkDuelChallengeSuccess = (
+  playerCrew: number,
+  playerLuck: number = (state as any).luck ?? 50,
+  enemyCrew: number = 30,
+): boolean => {
+  const luckRoll = Math.floor(Math.random() * (Math.max(1, playerLuck) + 1));
+  return playerCrew + luckRoll >= enemyCrew;
+};
 
 /**
  * Evaluates tactical stance advantage between attacker and defender.
@@ -101,15 +173,28 @@ export const evaluateStanceAdvantage = (
 };
 
 /**
- * Calculates damage dealt in a duel exchange
+ * Calculates damage dealt in a duel exchange taking into account weapon family synergy.
  */
 export const calculateDuelDamage = (
   attacker: DuelFighter,
   defender: DuelFighter,
   advantageFactor: number,
+  stance?: AttackerStance,
 ): { damage: number; isCrit: boolean } => {
-  const basePower = attacker.weaponPower + (attacker.swordsmanship * 0.4) + (attacker.battleLevel * 2);
-  const armorMitigation = defender.armorDefense * 0.5;
+  // Weapon family synergy bonus
+  let weaponSynergy = 1.0;
+  if (stance === 'thrust' && attacker.weaponCategory === 'Fencing Sword') {
+    weaponSynergy = 1.25;
+  } else if (stance === 'slash' && attacker.weaponCategory === 'Curved Sword') {
+    weaponSynergy = 1.25;
+  } else if (stance === 'strike' && attacker.weaponCategory === 'Heavy Sword') {
+    weaponSynergy = 1.25;
+  } else if (attacker.weaponCategory === 'Straight Sword') {
+    weaponSynergy = 1.05; // Balanced bonus across all stances
+  }
+
+  const basePower = (attacker.weaponPower * weaponSynergy) + (attacker.swordsmanship * 0.4) + (attacker.battleLevel * 2);
+  const armorMitigation = defender.armorDefense * 0.6;
 
   // Critical strike roll based on swordsmanship
   const critRoll = Math.random() * 100;
@@ -133,7 +218,6 @@ export const calculateDuelDamage = (
 export const selectEnemyDefenderStance = (
   playerRecentStances: AttackerStance[],
 ): DefenderStance => {
-  // If player repeatedly uses one stance, counter it
   const lastStance = playerRecentStances[playerRecentStances.length - 1];
   const roll = Math.random();
 
@@ -163,14 +247,12 @@ export const executeDuelRound = (
   const { playerFighter, enemyFighter } = duelState;
   const enemyStance = selectEnemyDefenderStance([]);
 
-  soundManager.playSfx('sword');
-
   const { attackerFactor, defenderFactor, text } = evaluateStanceAdvantage(
     playerStance,
     enemyStance,
   );
 
-  const playerAttack = calculateDuelDamage(playerFighter, enemyFighter, attackerFactor);
+  const playerAttack = calculateDuelDamage(playerFighter, enemyFighter, attackerFactor, playerStance);
   const enemyAttack = calculateDuelDamage(enemyFighter, playerFighter, defenderFactor);
 
   let pDamage = 0;
@@ -182,11 +264,13 @@ export const executeDuelRound = (
     pDamage = playerAttack.damage;
     eDamage = Math.round(enemyAttack.damage * 0.25);
     meterShift = Math.round(15 * attackerFactor + (playerAttack.isCrit ? 12 : 0));
+    soundManager.playSfx('duelHit');
   } else {
     // Enemy countered
     eDamage = enemyAttack.damage;
     pDamage = Math.round(playerAttack.damage * 0.25);
     meterShift = -Math.round(15 * defenderFactor + (enemyAttack.isCrit ? 12 : 0));
+    soundManager.playSfx('duelMiss');
   }
 
   // Update fighter health
@@ -228,49 +312,60 @@ export const executeDuelRound = (
 };
 
 /**
- * Initializes a new 1v1 Sword Duel against an enemy commodore
+ * Initializes a new 1v1 Sword Duel against an enemy commodore.
+ * If player equipment is not passed, reads real equipment from player inventory!
  */
 export const createDuelState = (
   playerName: string,
   playerSwordsmanship: number,
   playerBattleLevel: number,
-  playerWeaponPower = 35,
-  playerArmorDefense = 20,
+  playerWeaponPower?: number,
+  playerArmorDefense?: number,
   enemyName = 'Pirate Commodore Blackbeard',
   enemySwordsmanship = 75,
   enemyBattleLevel = 10,
   enemyWeaponPower = 30,
   enemyArmorDefense = 18,
-): DuelState => ({
-  isActive: true,
-  round: 0,
-  balanceMeter: 100, // 0..200, 100 = dead center
-  log: ['The captains draw their blades! The duel for fleet command begins!'],
-  winner: null,
-  playerFighter: {
-    name: playerName,
-    avatarId: '1',
-    weaponName: 'Finely Crafted Rapier',
-    weaponPower: playerWeaponPower,
-    weaponCategory: 'Fencing Sword',
-    armorName: 'Plate Armor',
-    armorDefense: playerArmorDefense,
-    swordsmanship: playerSwordsmanship,
-    battleLevel: playerBattleLevel,
-    health: 100,
-    maxHealth: 100,
-  },
-  enemyFighter: {
-    name: enemyName,
-    avatarId: '2',
-    weaponName: 'Damascus Scimitar',
-    weaponPower: enemyWeaponPower,
-    weaponCategory: 'Curved Sword',
-    armorName: 'Reinforced Brigandine',
-    armorDefense: enemyArmorDefense,
-    swordsmanship: enemySwordsmanship,
-    battleLevel: enemyBattleLevel,
-    health: 100,
-    maxHealth: 100,
-  },
-});
+): DuelState => {
+  const equip = getPlayerDuelEquipment();
+
+  const finalPlayerWepPower = playerWeaponPower !== undefined ? playerWeaponPower : equip.weaponPower;
+  const finalPlayerArmDef = playerArmorDefense !== undefined ? playerArmorDefense : equip.armorDefense;
+  const finalPlayerWepName = equip.weapon ? equip.weapon.name : 'Officer Rapier';
+  const finalPlayerArmName = equip.armor ? equip.armor.name : 'Reinforced Doublet';
+  const finalPlayerCategory = equip.weaponCategory;
+
+  return {
+    isActive: true,
+    round: 0,
+    balanceMeter: 100, // 0..200, 100 = dead center
+    log: ['The captains draw their blades! The duel for fleet command begins!'],
+    winner: null,
+    playerFighter: {
+      name: playerName,
+      avatarId: '1',
+      weaponName: finalPlayerWepName,
+      weaponPower: finalPlayerWepPower,
+      weaponCategory: finalPlayerCategory,
+      armorName: finalPlayerArmName,
+      armorDefense: finalPlayerArmDef,
+      swordsmanship: playerSwordsmanship,
+      battleLevel: playerBattleLevel,
+      health: 100,
+      maxHealth: 100,
+    },
+    enemyFighter: {
+      name: enemyName,
+      avatarId: '2',
+      weaponName: 'Damascus Scimitar',
+      weaponPower: enemyWeaponPower,
+      weaponCategory: 'Curved Sword',
+      armorName: 'Reinforced Brigandine',
+      armorDefense: enemyArmorDefense,
+      swordsmanship: enemySwordsmanship,
+      battleLevel: enemyBattleLevel,
+      health: 100,
+      maxHealth: 100,
+    },
+  };
+};

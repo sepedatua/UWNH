@@ -1,4 +1,4 @@
-import React, { ReactNode, useState } from 'react';
+import { ReactNode, useState } from 'react';
 import useBuilding from './hooks/useBuilding';
 import {
   CharacterMessageBoxType,
@@ -19,17 +19,23 @@ import {
   DiceGameResult,
 } from '../../state/actionsPub';
 import WaitressModal from './WaitressModal';
-
-const pubOptions = [
-  'Recruit Crew',
-  'Dismiss Crew',
-  'Treat',
-  'Gamble',
-  'Waitress',
-] as const;
-type PubOptions = (typeof pubOptions)[number];
+import MateRecruitModal from './MateRecruitModal';
+import { getAvailableTavernMate } from '../../game/port/tavernMates';
 
 export default function Pub() {
+  const availableMate = getAvailableTavernMate(state.portId);
+
+  type PubOptions = 'Recruit Crew' | 'Dismiss Crew' | 'Recruit Mate' | 'Treat' | 'Gamble' | 'Waitress';
+
+  const pubOptions: PubOptions[] = [
+    'Recruit Crew',
+    'Dismiss Crew',
+    ...(availableMate ? (['Recruit Mate'] as PubOptions[]) : []),
+    'Treat',
+    'Gamble',
+    'Waitress',
+  ];
+
   const { selectOption, next, back, reset, state: buildingState } =
     useBuilding<PubOptions>();
 
@@ -41,12 +47,16 @@ export default function Pub() {
   const [diceResult, setDiceResult] = useState<DiceGameResult | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  let vendorMessage: VendorMessageBoxType = {
-    body: 'Hey sailor, you’ll like our wine! What can we get for you and your crew?',
-  };
+  let vendorMessage: VendorMessageBoxType = availableMate
+    ? {
+        body: `Welcome, Captain! That man in the corner is ${availableMate.name}, an unemployed navigator looking for a fleet.`,
+      }
+    : {
+        body: 'Hey sailor, you’ll like our wine! What can we get for you and your crew?',
+      };
 
-  // Carlotta greets in Lisbon if no specific vendor message
-  if (isLisbon() && !statusMessage) {
+  // Carlotta greets in Lisbon if no specific vendor message and no mate
+  if (isLisbon() && !statusMessage && !availableMate) {
     vendorMessage = null;
   }
 
@@ -217,6 +227,25 @@ export default function Pub() {
             </button>
           </div>
         </div>
+      );
+    }
+  }
+
+  // RECRUIT MATE
+  if (option === 'Recruit Mate') {
+    vendorMessage = null;
+    if (availableMate) {
+      children = (
+        <MateRecruitModal
+          mate={availableMate}
+          onClose={reset}
+          onRecruited={() => {
+            setStatusMessage(
+              `Successfully commissioned ${availableMate.name} into your fleet company! You can assign their ship or officer duty in the Mates or Fleet roster.`
+            );
+            reset();
+          }}
+        />
       );
     }
   }

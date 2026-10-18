@@ -101,6 +101,7 @@ function Interface({ resolve }: Props) {
             buildingId={buildingId}
             timePassed={timePassed}
             gold={gold}
+            inCombat={inCombat}
           >
             <Provisions hidden={inPort} />
           </Left>

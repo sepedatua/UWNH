@@ -5,12 +5,20 @@ import {
   canBoardShip,
   canFireCannonsAt,
   canMoveToHex,
+  commissionPrizeShip,
   createCombatEngagement,
+  deductPlayerShot,
   endActiveShipTurn,
+  finalizeCombatResults,
   fireBroadside,
+  fleeShip,
   moveShip,
   rotateShip,
+  scuttlePrizeShip,
+  setConsortOrder,
+  setFleetPlan,
 } from './combatActions';
+import { staggeredBroadsideHexes } from './hexUtils';
 
 describe('combatActions', () => {
   beforeEach(() => {
@@ -91,9 +99,9 @@ describe('combatActions', () => {
     const playerShip = combat.ships[0];
     const enemyShip = combat.ships.find((s) => s.team === 'enemy')!;
 
-    // Place enemy ship right into player broadside arc (range 1)
-    enemyShip.hex = { q: playerShip.hex.q + 1, r: playerShip.hex.r - 1 };
-    playerShip.heading = 1; // Facing East, Port side faces NE (q+1, r-1)
+    // Place enemy ship right into player port broadside arc (range 1)
+    const { port } = staggeredBroadsideHexes(playerShip.hex, playerShip.heading, 1);
+    enemyShip.hex = { ...port[0] };
 
     const initialDurability = enemyShip.durability;
     const fired = fireBroadside(playerShip.id, enemyShip.id, combat);
@@ -101,6 +109,86 @@ describe('combatActions', () => {
     expect(fired).toBe(true);
     expect(playerShip.hasActed).toBe(true);
     expect(enemyShip.durability).toBeLessThanOrEqual(initialDurability);
+  });
+
+  test('deducts Shot ammunition from player cargo on broadside firing', () => {
+    state.fleets['1'].ships[0].cargo = [{ type: 'shot', quantity: 5 }];
+    expect(deductPlayerShot(1)).toBe(true);
+    expect(state.fleets['1'].ships[0].cargo[0].quantity).toBe(4);
+
+    // Drain all remaining shot
+    expect(deductPlayerShot(4)).toBe(true);
+    expect(state.fleets['1'].ships[0].cargo[0].quantity).toBe(0);
+
+    // Out of ammo: should reject firing
+    expect(deductPlayerShot(1)).toBe(false);
+  });
+
+  test('sets flagship fleet plans and individual consort orders', () => {
+    const combat = createCombatEngagement();
+    setFleetPlan('defend_flagship', combat);
+    expect(combat.fleetPlan).toBe('defend_flagship');
+    expect(combat.log[0]).toContain('Defend the Flagship');
+
+    const consort = combat.ships.find((s) => s.team === 'player' && !s.isFlagship);
+    if (consort) {
+      setConsortOrder(consort.id, { targetShipId: null, tactic: 'cannon' }, combat);
+      expect(consort.order?.tactic).toBe('cannon');
+    }
+  });
+
+  test('fleeShip allows disengagement only at battlefield boundary', () => {
+    const combat = createCombatEngagement();
+    const playerShip = combat.ships[0];
+
+    // Inside center of battlefield: cannot flee
+    playerShip.hex = { q: 20, r: 20 };
+    expect(fleeShip(playerShip.id, combat)).toBe(false);
+    expect(playerShip.hasFled).toBeFalsy();
+
+    // Move to outer border: can flee
+    playerShip.hex = { q: 1, r: 20 };
+    expect(fleeShip(playerShip.id, combat)).toBe(true);
+    expect(playerShip.hasFled).toBe(true);
+  });
+
+  test('commissions and scuttles captured prize ships with persistent state writeback', () => {
+    const combat = createCombatEngagement();
+    combat.spoils = {
+      gold: 5000,
+      fame: 200,
+      commodities: [{ type: 'spice', quantity: 20 }],
+      capturedPrizeShips: [
+        {
+          id: 'prize_1',
+          name: 'Galleon Prize',
+          shipTypeId: '2',
+          durability: 50,
+          survivingCrew: 30,
+          guns: 20,
+          cannonType: 'Normal',
+          cargo: [{ type: 'sugar', quantity: 15 }],
+        },
+      ],
+    };
+
+    // Add unassigned mate
+    state.mates = [
+      {
+        sailorId: 'mate_rocco',
+        role: null,
+      } as any,
+    ];
+
+    const initialShipCount = state.fleets['1'].ships.length;
+    const commissioned = commissionPrizeShip('prize_1', 'mate_rocco', combat);
+
+    expect(commissioned).toBe(true);
+    expect(state.fleets['1'].ships.length).toBe(initialShipCount + 1);
+    expect(state.mates[0].role).toBe(initialShipCount);
+
+    finalizeCombatResults(true, combat);
+    expect(state.gold).toBeGreaterThan(0);
   });
 
   test('canBoardShip validates adjacency and executes melee clash or duel', () => {

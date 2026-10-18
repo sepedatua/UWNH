@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import Assets from '../assets';
 import { shipData } from '../data/shipData';
 import { getPlayerFleet } from '../state/selectorsFleet';
-import { getRoleDisplay } from '../state/selectors';
+import { getMates, getRoleDisplay } from '../state/selectors';
+import { assignMateRole, unassignMateRole } from '../game/port/tavernMates';
 import MessageBox from './common/MessageBox';
 import {
   getCrewAssignment,
@@ -16,11 +17,14 @@ import { calculateSightRadius } from '../game/world/fogOfWarRenderer';
 import soundManager from './sound/soundManager';
 
 export default function Fleet() {
+  const [tick, setTick] = useState(0);
   const [activeTab, setActiveTab] = useState<'crew' | 'ships'>('crew');
   const [assignment, setAssignment] = useState<CrewAssignment>(() => getCrewAssignment());
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [appointingShipIdx, setAppointingShipIdx] = useState<number | null>(null);
 
   const fleet = getPlayerFleet();
+  const mates = useMemo(() => getMates(), [tick, activeTab]);
   const flagship = fleet[0];
   const flagshipData = flagship ? shipData[flagship.id] : null;
 
@@ -49,7 +53,7 @@ export default function Fleet() {
       [changed]: val,
       [others[0]]: newOther1,
       [others[1]]: newOther2,
-    } as CrewAssignment;
+    } as unknown as CrewAssignment;
 
     setAssignment(updated);
     setCrewAssignment(updated);
@@ -57,7 +61,8 @@ export default function Fleet() {
 
   const handleApplyPreset = (key: 'voyage' | 'exploration' | 'combat' | 'balanced') => {
     const res = applyCrewPreset(key);
-    setAssignment(res.assignment);
+    const newAssignment = 'assignment' in res ? res.assignment : (res as CrewAssignment);
+    setAssignment(newAssignment);
     soundManager.playSfx('shipBell');
     setToastMessage(`Applied preset: ${CREW_PRESETS[key].label}`);
     setTimeout(() => setToastMessage(null), 3000);
@@ -335,7 +340,10 @@ export default function Fleet() {
             <div className="grid grid-cols-2 gap-3">
               {fleet.map((ship, idx) => {
                 const data = shipData[ship.id];
-                const captainTitle = getRoleDisplay(idx);
+                const isFlagship = idx === 0;
+                const captain = isFlagship
+                  ? mates[0]
+                  : mates.find((m) => m.role === idx);
 
                 return (
                   <div
@@ -352,19 +360,55 @@ export default function Fleet() {
                     <div className="flex-1 text-xs space-y-1">
                       <div className="flex justify-between items-center">
                         <span className="font-bold text-sm text-[#2a170a]">
-                          {idx === 0 ? '👑 ' : ''}
+                          {isFlagship ? '👑 ' : ''}
                           {ship.name}
                         </span>
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#dfcfbd] border border-[#9b8267]">
                           {data?.name}
                         </span>
                       </div>
-                      <div className="text-neutral-700 text-[11px] font-semibold">
-                        {captainTitle}
-                      </div>
+
+                      {/* Captain Badge & Action */}
+                      {isFlagship ? (
+                        <div className="text-amber-900 text-[11px] font-bold flex items-center gap-1">
+                          <span>👑 Commodore: {captain?.name || 'Flagship Commander'}</span>
+                        </div>
+                      ) : captain ? (
+                        <div className="flex items-center justify-between bg-[#dfcfbd] px-2 py-1 rounded border border-[#b89b7b]">
+                          <div>
+                            <div className="font-bold text-[11px] text-[#2a170a]">
+                              ⚔️ Captain: {captain.name}
+                            </div>
+                            <div className="text-[10px] text-neutral-600">
+                              Nav Lv {captain.navigationLevel} • Battle Lv {captain.battleLevel}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setAppointingShipIdx(idx)}
+                            className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#e8dac9] hover:bg-[#d6c1aa] text-neutral-800 border border-[#8c6f4b] cursor-pointer shadow-2xs"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between bg-red-50 px-2 py-1 rounded border border-red-300">
+                          <div className="text-red-800 font-bold text-[10px]">
+                            ⚠️ No Captain Appointed!
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setAppointingShipIdx(idx)}
+                            className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-800 hover:bg-amber-900 text-amber-100 border border-amber-950 cursor-pointer shadow-xs"
+                          >
+                            + Appoint
+                          </button>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-3 gap-1 pt-1 text-[10px] text-neutral-600">
                         <div>
-                          Crew: <strong className="text-black">{ship.crew}</strong>/{ship.maxCrew || data?.capacity}
+                          Crew: <strong className="text-black">{ship.crew}</strong>/{(ship as any).maxCrew || data?.capacity}
                         </div>
                         <div>
                           Min: <strong className="text-black">{data?.minimumCrew}</strong>
@@ -386,6 +430,113 @@ export default function Fleet() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Consort Captain Appointment Modal */}
+        {appointingShipIdx !== null && (
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="w-[520px] max-h-[480px] bg-[#f4ebe1] border-2 border-[#8c6f4b] rounded-xl shadow-2xl flex flex-col overflow-hidden font-mono text-black">
+              <div className="bg-[#e2d0bd] border-b border-[#bfa384] px-4 py-2.5 flex justify-between items-center">
+                <div className="font-bold text-sm text-[#2c1708] flex items-center gap-2">
+                  <span>⚔️</span>
+                  <span>
+                    Appoint Captain: {fleet[appointingShipIdx]?.name} (Ship #{appointingShipIdx + 1})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAppointingShipIdx(null)}
+                  className="text-neutral-600 hover:text-black font-bold px-2 py-0.5 rounded cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto space-y-2 text-xs flex-1">
+                <div className="text-[11px] text-neutral-600 mb-2">
+                  Select an officer from your roster to command this vessel in tactical naval combat:
+                </div>
+
+                {mates.slice(1).map((mate) => {
+                  const isCurrentCaptain = mate.role === appointingShipIdx;
+                  const currentRoleDisplay = getRoleDisplay(mate.role);
+
+                  return (
+                    <div
+                      key={mate.sailorId}
+                      className={`p-2.5 rounded border flex items-center justify-between gap-3 ${
+                        isCurrentCaptain
+                          ? 'bg-amber-800 text-amber-100 border-amber-950'
+                          : 'bg-[#faf3eb] border-[#caa98a]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={Assets.characters(mate.sailorId)}
+                          alt=""
+                          className="w-10 h-12 object-cover rounded border border-[#8c6f4b] bg-[#dfcfbd]"
+                        />
+                        <div>
+                          <div className="font-bold text-sm">{mate.name}</div>
+                          <div className="text-[10px] text-neutral-600">
+                            Nav Lv {mate.navigationLevel} • Battle Lv {mate.battleLevel} • Ldr {mate.stats.leadership}
+                          </div>
+                          <div className="text-[10px] text-amber-900 font-semibold mt-0.5">
+                            {currentRoleDisplay || 'Reserve Navigator'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        {isCurrentCaptain ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              unassignMateRole(mate.sailorId);
+                              setAppointingShipIdx(null);
+                              setTick((t) => t + 1);
+                            }}
+                            className="px-2.5 py-1 rounded text-xs font-bold bg-neutral-900 text-neutral-200 border border-neutral-700 cursor-pointer hover:bg-black"
+                          >
+                            Relieve
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              assignMateRole(mate.sailorId, appointingShipIdx);
+                              setAppointingShipIdx(null);
+                              setTick((t) => t + 1);
+                              soundManager.playSfx('shipBell');
+                            }}
+                            className="px-3 py-1 rounded text-xs font-bold bg-amber-800 hover:bg-amber-900 text-amber-100 border border-amber-950 cursor-pointer shadow-sm"
+                          >
+                            Appoint
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {mates.length <= 1 && (
+                  <div className="text-center py-6 text-neutral-500 italic">
+                    You have no other navigators in your fleet! Visit local taverns to recruit able officers.
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-[#e2d0bd] border-t border-[#bfa384] px-4 py-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setAppointingShipIdx(null)}
+                  className="px-4 py-1.5 bg-[#d4c1ab] hover:bg-[#c5b098] border border-[#8c6f4b] rounded text-xs font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         )}
