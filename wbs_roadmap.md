@@ -275,6 +275,11 @@
   - Interactive Canvas Zoom & Pan:
     - Zoom scaling from $1.0\times$ (full world view) to $4.0\times$ (high-detail regional view) with smooth boundary clamping.
     - Mouse wheel zoom centered on cursor pointer, click-and-drag panning across charted and uncharted waters.
+    - **4-Pillar Cartographic Label & Decluttering Engine**:
+      - *Pillar 1 (Counter-Scaled Typography & Pins)*: Scaled font size (`9 / zoom`), stroke outlines (`1.4 / zoom`), and pin radii (`2.4 / sqrt(zoom)`) inversely with zoom so typography remains crisp, compact, and constant screen-size while oceans expand.
+      - *Pillar 2 (Spatial Collision Grid)*: Real-time 2D bounding-box collision detection that suppresses overlapping text in dense waters (Mediterranean, English Channel, Caribbean) while preserving underlying colored POI pins.
+      - *Pillar 3 (Tiered LOD & Hover Focus)*: Global overview ($< 1.4\times$) displays pins only; regional view ($1.4\times - 2.2\times$) reveals major capitals and trading hubs; local view ($\ge 2.2\times$) reveals all discovered features. Hovered ports and active course destinations receive top-priority illuminated badges and glowing golden halos. Zoom-responsive hit detection radius (`28 / zoom`) ensures pixel-accurate hover & course clicking.
+      - *Pillar 4 (Toolbar Filter Toggle)*: Dedicated `[🏷️ Labels]` toggle button in the bottom filter toolbar allowing captains to toggle all labels on/off with 1 click.
 - [x] **Task 10.6: Coastal Clearance Routing, Anti-Stuck Deflection & Explored-Only Pathfinding Rule** (Completed)
   - Explored-Only Maritime Routing: Autopilot strictly paths through already revealed/charted waters (enforces Fog of War trade route progression; returns null and warns if unrevealed fog blocks passage).
   - Open-Sea Safety Weighting: Multi-tier cost matrix (1.0 for open ocean, 4.5 for coastal bottlenecks) so ships naturally favor wide open sea passages and avoid perilous 1-tile shallows like Bangka Strait.

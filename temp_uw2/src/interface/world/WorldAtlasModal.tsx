@@ -28,6 +28,7 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
   const [showFullGlobe, setShowFullGlobe] = useState(false);
   const [showPorts, setShowPorts] = useState(true);
   const [showLandmarks, setShowLandmarks] = useState(true);
+  const [showLabels, setShowLabels] = useState(true);
   const [hoverInfo, setHoverInfo] = useState<string | null>(null);
   const [hoveredPort, setHoveredPort] = useState<any | null>(null);
   const [selectedPortForCourse, setSelectedPortForCourse] = useState<any | null>(null);
@@ -212,14 +213,38 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
       }
     }
 
-    // 4. Render Discovered Ports if toggled
+    // 4. Render Discovered Pins & Cartographic Labels
+    // Counter-scaled geometry: pins and text remain constant physical size as world expands
+    const portRadius = Math.max(1.3, 2.4 / Math.sqrt(zoom));
+    const landmarkRadius = Math.max(1.6, 3.0 / Math.sqrt(zoom));
+    const villageRadius = Math.max(1.4, 2.8 / Math.sqrt(zoom));
+    const pinStrokeWidth = Math.max(0.3, 0.6 / zoom);
+
+    interface LabelCandidate {
+      id: string;
+      name: string;
+      displayText: string;
+      x: number;
+      y: number;
+      pinRadius: number;
+      priority: number;
+      textColor: string;
+      isHovered: boolean;
+      isSelectedCourse: boolean;
+      isMajor: boolean;
+    }
+
+    const labelCandidates: LabelCandidate[] = [];
+
+    // 4.1 Render Port Pins & Register Candidates
     if (showPorts) {
       const allPorts = [
         ...regularPorts.map((p, i) => ({ ...p, id: String(i + 1), isSupply: false })),
-        ...supplyPorts.map((p, i) => ({ ...p, id: String(101 + i), isSupply: true })),
+        ...supplyPorts.map((p, i) => ({ ...p, id: String(101 + i), isSupply: true, economy: 0 })),
         ...portRegistry.getAllCustomPorts().map((cp) => ({
           ...cp,
           isSupply: cp.isSupplyPort ?? (cp.archetype === 'supply'),
+          economy: (cp as any).economy ?? 0,
         })),
       ];
 
@@ -233,27 +258,103 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
         const px = (port.position.x / 2160) * width;
         const py = (port.position.y / 1080) * height;
 
+        const isHovered = Boolean(
+          hoveredPort && (hoveredPort.id === port.id || hoveredPort.name === port.name),
+        );
+        const isSelectedCourse = Boolean(
+          (selectedPortForCourse &&
+            (selectedPortForCourse.id === port.id || selectedPortForCourse.name === port.name)) ||
+            (activeCourse && (activeCourse.targetPortId === port.id || activeCourse.portName === port.name)),
+        );
+
+        // Port pin dot
         ctx.fillStyle = port.isSupply ? '#10b981' : '#f59e0b';
         ctx.beginPath();
-        ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+        ctx.arc(px, py, portRadius, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 0.5;
+        ctx.lineWidth = pinStrokeWidth;
         ctx.stroke();
 
-        // Level-of-Detail (LOD): Render port typography at regional zoom (>= 1.75x)
-        if (zoom >= 1.75) {
-          ctx.font = 'bold 8px Georgia, serif';
-          ctx.fillStyle = port.isSupply ? '#a7f3d0' : '#fef08a';
-          ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
-          ctx.lineWidth = 2.0;
-          ctx.strokeText(port.name, px + 4, py + 3);
-          ctx.fillText(port.name, px + 4, py + 3);
+        // Prominent highlight rings for hovered or selected ports
+        if (isHovered) {
+          ctx.strokeStyle = '#fbbf24';
+          ctx.lineWidth = Math.max(0.8, 1.6 / zoom);
+          ctx.beginPath();
+          ctx.arc(px, py, portRadius + 2.2 / zoom, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (isSelectedCourse) {
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = Math.max(0.8, 1.6 / zoom);
+          ctx.beginPath();
+          ctx.arc(px, py, portRadius + 2.2 / zoom, 0, Math.PI * 2);
+          ctx.stroke();
         }
+
+        // Priority calculation for collision & LOD
+        const isCapital = [
+          'Lisbon',
+          'Seville',
+          'London',
+          'Amsterdam',
+          'Genoa',
+          'Istanbul',
+        ].includes(port.name);
+        const portEconomy = (port as any).economy ?? 0;
+        const isMajorTradeHub =
+          isCapital ||
+          (!port.isSupply &&
+            (portEconomy >= 600 ||
+              [
+                'Venice',
+                'Alexandria',
+                'Calicut',
+                'Goa',
+                'Malacca',
+                'Nagasaki',
+                'Sakai',
+                'Santo Domingo',
+                'Havana',
+                'Cape Town',
+                'Antwerp',
+                'Hamburg',
+                'Copenhagen',
+                'Marseille',
+                'Naples',
+                'Athens',
+                'Mozambique',
+                'Zanzibar',
+                'Muscat',
+                'Hormuz',
+                'Hangchow',
+                'Changan',
+              ].includes(port.name)));
+
+        let priority = 100;
+        if (isHovered) priority = 1000;
+        else if (isSelectedCourse) priority = 900;
+        else if (isCapital) priority = 600;
+        else if (isMajorTradeHub) priority = 400;
+        else if (!port.isSupply)
+          priority = 200 + Math.min(100, Math.round(portEconomy / 10));
+
+        labelCandidates.push({
+          id: port.id,
+          name: port.name,
+          displayText: port.name,
+          x: px,
+          y: py,
+          pinRadius: portRadius,
+          priority,
+          textColor: port.isSupply ? '#a7f3d0' : '#fef08a',
+          isHovered,
+          isSelectedCourse,
+          isMajor: isMajorTradeHub,
+        });
       });
     }
 
-    // 5. Render Discovered Landmarks if toggled
+    // 4.2 Render Landmark Pins & Register Candidates
     if (showLandmarks && state.discoveries) {
       discoveries.forEach((disc) => {
         if (!state.discoveries.includes(disc.id)) return;
@@ -263,25 +364,29 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
 
         ctx.fillStyle = '#ef4444';
         ctx.beginPath();
-        ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+        ctx.arc(px, py, landmarkRadius, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = pinStrokeWidth;
         ctx.stroke();
 
-        // Level-of-Detail (LOD): Render landmark name at regional zoom (>= 1.75x)
-        if (zoom >= 1.75) {
-          ctx.font = 'bold 8px Georgia, serif';
-          ctx.fillStyle = '#fca5a5';
-          ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
-          ctx.lineWidth = 2.0;
-          ctx.strokeText(disc.name, px + 5, py + 3);
-          ctx.fillText(disc.name, px + 5, py + 3);
-        }
+        labelCandidates.push({
+          id: disc.id,
+          name: disc.name,
+          displayText: disc.name,
+          x: px,
+          y: py,
+          pinRadius: landmarkRadius,
+          priority: 350,
+          textColor: '#fca5a5',
+          isHovered: false,
+          isSelectedCourse: false,
+          isMajor: true,
+        });
       });
     }
 
-    // 5.5 Render Discovered Indigenous Villages
+    // 4.3 Render Indigenous Village Pins & Register Candidates
     if (state.discoveredVillages && state.discoveredVillages.length > 0) {
       villages.forEach((vil) => {
         if (!state.discoveredVillages?.includes(vil.id)) return;
@@ -291,22 +396,112 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
 
         ctx.fillStyle = '#22c55e';
         ctx.beginPath();
-        ctx.arc(px, py, 3.2, 0, Math.PI * 2);
+        ctx.arc(px, py, villageRadius, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 0.8;
+        ctx.lineWidth = pinStrokeWidth;
         ctx.stroke();
 
-        if (zoom >= 1.75) {
-          ctx.font = 'bold 8px Georgia, serif';
-          ctx.fillStyle = '#86efac';
-          ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
-          ctx.lineWidth = 2.0;
-          ctx.strokeText(`⛺ ${vil.name}`, px + 5, py + 3);
-          ctx.fillText(`⛺ ${vil.name}`, px + 5, py + 3);
-        }
+        labelCandidates.push({
+          id: vil.id,
+          name: vil.name,
+          displayText: `⛺ ${vil.name}`,
+          x: px,
+          y: py,
+          pinRadius: villageRadius,
+          priority: 150,
+          textColor: '#86efac',
+          isHovered: false,
+          isSelectedCourse: false,
+          isMajor: false,
+        });
       });
     }
+
+    // 4.4 Render Cartographic Typography with Spatial Collision Culling & Tiered LOD
+    const fontSize = Math.max(5, Math.min(9.5, 9 / zoom));
+    const labelStrokeWidth = Math.max(0.6, 1.4 / zoom);
+    ctx.font = `bold ${fontSize}px Georgia, serif`;
+
+    // Sort descending by priority so capitals & hovered ports claim label space first
+    labelCandidates.sort((a, b) => b.priority - a.priority);
+
+    const occupiedBoxes: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+
+    labelCandidates.forEach((cand) => {
+      // Tiered Level-of-Detail (LOD):
+      if (!showLabels) {
+        // When labels toggled OFF: only hovered or selected course port displays
+        if (!cand.isHovered && !cand.isSelectedCourse) return;
+      } else if (zoom < 1.4) {
+        // Global overview (< 1.4x): show only hovered or selected course destination
+        if (!cand.isHovered && !cand.isSelectedCourse) return;
+      } else if (zoom < 2.2) {
+        // Regional sea (1.4x - 2.2x): show major trading hubs, capitals, landmarks, or hovered/selected
+        if (!cand.isMajor && !cand.isHovered && !cand.isSelectedCourse) return;
+      }
+      // At zoom >= 2.2: all candidates eligible subject to collision detection
+
+      const textWidth = ctx.measureText(cand.displayText).width;
+      const textHeight = fontSize;
+
+      // Flip label to left of pin if near right map margin
+      const pad = 2.5 / zoom;
+      const flipToLeft = cand.x > width * 0.90;
+      const labelX = flipToLeft
+        ? cand.x - cand.pinRadius - textWidth - pad
+        : cand.x + cand.pinRadius + pad;
+      const labelY = cand.y + fontSize * 0.35;
+
+      // Bounding box for collision detection with margin
+      const marginX = 2 / zoom;
+      const marginY = 1.2 / zoom;
+      const box = {
+        x1: labelX - marginX,
+        y1: labelY - textHeight - marginY,
+        x2: labelX + textWidth + marginX,
+        y2: labelY + marginY,
+      };
+
+      // Spatial collision check against higher-priority labels
+      let collides = false;
+      if (!cand.isHovered && !cand.isSelectedCourse) {
+        for (const occ of occupiedBoxes) {
+          if (!(box.x2 < occ.x1 || box.x1 > occ.x2 || box.y2 < occ.y1 || box.y1 > occ.y2)) {
+            collides = true;
+            break;
+          }
+        }
+      }
+
+      if (!collides) {
+        occupiedBoxes.push(box);
+
+        // Highlight background badge for hovered or selected destination
+        if (cand.isHovered || cand.isSelectedCourse) {
+          ctx.save();
+          ctx.fillStyle = cand.isHovered
+            ? 'rgba(26, 18, 11, 0.92)'
+            : 'rgba(12, 30, 48, 0.92)';
+          ctx.fillRect(box.x1, box.y1, box.x2 - box.x1, box.y2 - box.y1);
+          ctx.strokeStyle = cand.isHovered ? '#fbbf24' : '#38bdf8';
+          ctx.lineWidth = 0.8 / zoom;
+          ctx.strokeRect(box.x1, box.y1, box.x2 - box.x1, box.y2 - box.y1);
+          ctx.restore();
+        }
+
+        // Counter-scaled text outline halo + fill
+        ctx.lineWidth = labelStrokeWidth;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.95)';
+        ctx.strokeText(cand.displayText, labelX, labelY);
+        ctx.fillStyle = cand.isHovered
+          ? '#fef08a'
+          : cand.isSelectedCourse
+          ? '#7dd3fc'
+          : cand.textColor;
+        ctx.fillText(cand.displayText, labelX, labelY);
+      }
+    });
 
     // 6. Render Flagship Position & Visual Horizon
     const shipPx = (playerPos.x / 2160) * width;
@@ -384,6 +579,8 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
     showLandmarks,
     showCoastlines,
     showFullGlobe,
+    showLabels,
+    hoveredPort,
     playerPos,
     sightBreakdown,
     activeCourse,
@@ -403,6 +600,8 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
       })),
     ];
 
+    const hitRadiusWorld = Math.max(8, 28 / zoom);
+
     return allPorts.find((port) => {
       if (!explorationManager.isPositionExplored(port.position.x, port.position.y)) {
         return false;
@@ -410,7 +609,7 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
       let dx = Math.abs(port.position.x - worldX);
       if (dx > 1080) dx = 2160 - dx;
       const dy = Math.abs(port.position.y - worldY);
-      return Math.hypot(dx, dy) <= 28;
+      return Math.hypot(dx, dy) <= hitRadiusWorld;
     });
   };
 
@@ -921,6 +1120,20 @@ export default function WorldAtlasModal({ isOpen, onClose }: Props) {
             >
               <span>🏛️</span>
               <span>Discoveries</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowLabels(!showLabels)}
+              className={`px-2.5 py-1 rounded border flex items-center space-x-1.5 transition-colors cursor-pointer ${
+                showLabels
+                  ? 'bg-amber-900/60 border-amber-500 text-yellow-200'
+                  : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+              }`}
+              title="Toggle port, landmark and village text labels on world map"
+            >
+              <span>🏷️</span>
+              <span>Labels {showLabels ? '(ON)' : '(OFF)'}</span>
             </button>
           </div>
 
