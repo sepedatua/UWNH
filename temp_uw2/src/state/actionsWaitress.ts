@@ -1,6 +1,8 @@
 import state from './state';
 import { getWaitressForPort } from '../data/waitressData';
 import { itemData, itemCategories, ItemId } from '../data/itemData';
+import { getAvailableTavernMate, TAVERN_MATES } from '../game/port/tavernMates';
+import { regularPorts } from '../data/portData';
 
 export interface WaitressActionResult {
   success: boolean;
@@ -8,7 +10,7 @@ export interface WaitressActionResult {
   favorGain: number;
   currentFavor: number;
   intel?: {
-    type: 'market' | 'pirate';
+    type: 'market' | 'pirate' | 'mate';
     title: string;
     body: string;
   };
@@ -173,3 +175,54 @@ export const askWaitressForPirateIntel = (portId: string): WaitressActionResult 
     },
   };
 };
+
+export const askWaitressForMateIntel = (portId: string): WaitressActionResult => {
+  const waitress = getWaitressForPort(portId);
+  const availableMate = getAvailableTavernMate(portId);
+
+  if (availableMate) {
+    return {
+      success: true,
+      message: `${waitress.name} smiles and points discreetly across the room: “See that gentleman sitting at the corner table? That is ${availableMate.name}! He’s an able navigator looking for a fleet commander to commission him.”`,
+      favorGain: 0,
+      currentFavor: getWaitressFavor(portId),
+      intel: {
+        type: 'mate',
+        title: `Tavern Navigator: ${availableMate.name}`,
+        body: `${availableMate.name} is right here in our tavern! Talk to the tavern barkeep and select "Recruit Mate" to appraise his abilities, view his signing bonus, and hire him.`,
+      },
+    };
+  }
+
+  // If no mate in this port, give rumors about nearest unhired mates in the world
+  const recruitedSailorIds = new Set((state.mates || []).map((m) => m.sailorId));
+  const unhiredAcrossWorld = TAVERN_MATES.filter(
+    (m) => !recruitedSailorIds.has(m.sailorId) && m.homePortId !== portId,
+  );
+
+  if (unhiredAcrossWorld.length > 0) {
+    const rumorMate = unhiredAcrossWorld[0];
+    const portIndex = Number(rumorMate.homePortId) - 1;
+    const targetPort = regularPorts[portIndex]?.name || 'a foreign port';
+
+    return {
+      success: true,
+      message: `${waitress.name} ponders for a moment: “There are no unemployed officers in our tavern right now, Captain. But I overheard visiting sailors saying that ${rumorMate.name} was seeking employment in the tavern at ${targetPort}!”`,
+      favorGain: 0,
+      currentFavor: getWaitressFavor(portId),
+      intel: {
+        type: 'mate',
+        title: `Navigator Rumor: ${rumorMate.name}`,
+        body: `Last sighted at the tavern in ${targetPort}. Sail to their port tavern to meet and recruit them!`,
+      },
+    };
+  }
+
+  return {
+    success: true,
+    message: `${waitress.name} smiles warmly: “All the famed navigators of the world seem to have found captain commissions already, Commodore!”`,
+    favorGain: 0,
+    currentFavor: getWaitressFavor(portId),
+  };
+};
+

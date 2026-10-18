@@ -116,6 +116,17 @@ export const TAVERN_MATES: TavernMate[] = [
     requiredFame: 50,
   },
   {
+    sailorId: '52',
+    name: 'Dante Peleira',
+    homePortId: '17', // Athens
+    signingBonus: 340,
+    monthlyWage: 24,
+    introQuote: '“I have surveyed the Aegean archipelago and know every reef between Athens, Crete, and Cyprus. Seeking an able navigator?”',
+    hiredQuote: '“By Apollo, you will not regret this! I shall guide your fleet safely through the trickiest Aegean shoals!”',
+    rejectQuote: '“The Aegean is treacherous for novice commanders. Build your naval renown first.”',
+    requiredFame: 180,
+  },
+  {
     sailorId: '43',
     name: 'Lawrence Edward',
     homePortId: '29', // Nantes

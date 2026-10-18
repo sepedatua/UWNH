@@ -451,6 +451,23 @@ const sailorData: { [key: string]: Sailor } = {
     battleLevel: 26,
     skills: ['Gunnery', 'Celestial Navigation', 'Negotiation'],
   },
+  '52': {
+    name: 'Dante Peleira',
+    age: 29,
+    stats: {
+      leadership: 72,
+      seamanship: 84,
+      knowledge: 80,
+      intuition: 82,
+      courage: 76,
+      swordplay: 70,
+      charm: 74,
+      luck: 75,
+    },
+    navigationLevel: 12,
+    battleLevel: 8,
+    skills: ['Celestial Navigation', 'Cartography'],
+  },
   'custom': {
     name: 'Custom Captain',
     age: 22,

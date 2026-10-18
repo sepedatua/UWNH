@@ -118,6 +118,10 @@ const characterData: { [key: string]: Character } = {
     name: 'Alfonso de Albuquerque',
     color: 'text-yellow-700',
   },
+  '52': {
+    name: 'Dante Peleira',
+    color: 'text-cyan-800',
+  },
   '98': {
     name: 'Carlotta, Owner of the Pub',
     color: 'text-amber-600',

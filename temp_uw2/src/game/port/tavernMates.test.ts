@@ -47,6 +47,11 @@ describe('Tavern Mates Recruitment & Fleet Officer Assignment', () => {
       expect(mate).not.toBeNull();
       expect(mate?.name).toBe('Andreas Baes');
       expect(mate?.sailor.navigationLevel).toBeGreaterThan(0);
+
+      const athensMate = getAvailableTavernMate('17');
+      expect(athensMate).not.toBeNull();
+      expect(athensMate?.name).toBe('Dante Peleira');
+      expect(athensMate?.sailor.skills).toContain('Celestial Navigation');
     });
 
     it('returns null if port has no tavern mate or all are recruited', () => {

@@ -8,6 +8,7 @@ import {
   giveItemGiftToWaitress,
   askWaitressForMarketIntel,
   askWaitressForPirateIntel,
+  askWaitressForMateIntel,
   WaitressActionResult,
 } from '../../state/actionsWaitress';
 import { itemData, itemCategories } from '../../data/itemData';
@@ -22,7 +23,7 @@ export default function WaitressModal({ portId, onClose }: Props) {
   const [favor, setFavor] = useState<number>(getWaitressFavor(portId));
   const [dialogue, setDialogue] = useState<string>(waitress.greeting);
   const [intelBox, setIntelBox] = useState<{
-    type: 'market' | 'pirate';
+    type: 'market' | 'pirate' | 'mate';
     title: string;
     body: string;
   } | null>(null);
@@ -224,6 +225,18 @@ export default function WaitressModal({ portId, onClose }: Props) {
           }`}
         >
           <span>{favor >= 80 ? '🔓' : '🔒'} Pirate Intel (80+)</span>
+        </button>
+
+        {/* Navigator Intel */}
+        <button
+          onClick={() => {
+            setShowItemPicker(false);
+            const res = askWaitressForMateIntel(portId);
+            handleResult(res);
+          }}
+          className="col-span-2 p-2 rounded font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 bg-blue-950/80 border-blue-600 text-blue-200 hover:bg-blue-900"
+        >
+          <span>🧭 Inquire About Navigators</span>
         </button>
       </div>
     </div>
