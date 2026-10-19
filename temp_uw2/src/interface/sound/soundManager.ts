@@ -616,7 +616,7 @@ class SoundManager {
         if (typeof parsed.musicVolume === 'number') this.musicVolume = parsed.musicVolume;
         if (typeof parsed.sfxVolume === 'number') this.sfxVolume = parsed.sfxVolume;
         if (typeof parsed.isMuted === 'boolean') this.isMuted = parsed.isMuted;
-        if (parsed.mode === 'orchestrated' || parsed.mode === 'fm_synth') this.mode = parsed.mode;
+        this.mode = 'orchestrated';
       }
     } catch (e) {
       // ignore

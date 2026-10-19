@@ -11,7 +11,7 @@ import {
 } from '@heroicons/react/24/solid';
 
 import { getRegionOrIfSupplyPort } from '../../game/port/portUtils';
-import soundManager, { SfxType } from './soundManager';
+import soundManager from './soundManager';
 
 import mastInTheMist from './assets/mast-in-the-mist.ogg';
 import themeOfJoao from './assets/theme-of-joão.ogg';
@@ -121,7 +121,6 @@ export default function Sound({ portId, buildingId, inCombat }: Props) {
   const masterVol = soundManager.getMasterVolume();
   const musicVol = soundManager.getMusicVolume();
   const sfxVol = soundManager.getSfxVolume();
-  const mode = soundManager.getSoundtrackMode();
   const trackMeta = soundManager.getCurrentTrack();
 
   const triggerAutoplay = () => {
@@ -172,10 +171,6 @@ export default function Sound({ portId, buildingId, inCombat }: Props) {
     audioRef.current.muted = isMuted;
     audioRef.current.volume = musicVol * masterVol;
   }, [isMuted, musicVol, masterVol]);
-
-  const testSfx = (type: SfxType) => {
-    soundManager.playSfx(type);
-  };
 
   return (
     <div className="relative inline-block align-bottom select-none">
@@ -228,8 +223,13 @@ export default function Sound({ portId, buildingId, inCombat }: Props) {
 
           {/* Now Playing */}
           <div className="mb-3 p-2 rounded bg-amber-950/40 border border-amber-800/40 text-xs">
-            <div className="text-amber-400 font-semibold truncate">
-              {trackMeta.title}
+            <div className="flex items-center justify-between">
+              <span className="text-amber-400 font-semibold truncate">
+                {trackMeta.title}
+              </span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-200 border border-amber-700/50">
+                CD Master
+              </span>
             </div>
             <div className="text-neutral-400 text-[10px]">
               Composer: {trackMeta.composer}
@@ -239,42 +239,8 @@ export default function Sound({ portId, buildingId, inCombat }: Props) {
             </div>
           </div>
 
-          {/* Soundtrack Mode Switcher */}
-          <div className="mb-3">
-            <div className="text-xs font-semibold text-amber-300 mb-1 flex justify-between">
-              <span>Soundtrack Emulation</span>
-              <span className="text-[10px] text-amber-400 font-normal">
-                {mode === 'orchestrated' ? 'CD Orchestral' : '16-Bit FM Synth'}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 text-xs">
-              <button
-                type="button"
-                className={`py-1 px-2 rounded border text-center transition-colors ${
-                  mode === 'orchestrated'
-                    ? 'bg-amber-600/40 border-amber-400 text-amber-100 font-semibold'
-                    : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-amber-200'
-                }`}
-                onClick={() => soundManager.setSoundtrackMode('orchestrated')}
-              >
-                CD Master
-              </button>
-              <button
-                type="button"
-                className={`py-1 px-2 rounded border text-center transition-colors ${
-                  mode === 'fm_synth'
-                    ? 'bg-amber-600/40 border-amber-400 text-amber-100 font-semibold'
-                    : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-amber-200'
-                }`}
-                onClick={() => soundManager.setSoundtrackMode('fm_synth')}
-              >
-                16-Bit FM Synth
-              </button>
-            </div>
-          </div>
-
           {/* Volume Sliders */}
-          <div className="space-y-2 mb-3 text-xs">
+          <div className="space-y-2 text-xs">
             <div>
               <div className="flex justify-between mb-0.5">
                 <span className="text-neutral-300">Master Volume</span>
@@ -321,57 +287,6 @@ export default function Sound({ portId, buildingId, inCombat }: Props) {
                 onChange={(e) => soundManager.setSfxVolume(parseFloat(e.target.value))}
                 className="w-full accent-amber-500 h-1.5 bg-neutral-700 rounded-lg cursor-pointer"
               />
-            </div>
-          </div>
-
-          {/* Web Audio SFX Test Palette */}
-          <div>
-            <div className="text-[11px] font-semibold text-amber-300/90 mb-1">
-              Synthesized Sound Effects
-            </div>
-            <div className="grid grid-cols-3 gap-1 text-[11px]">
-              <button
-                type="button"
-                className="py-1 px-1.5 rounded bg-neutral-800 hover:bg-amber-900/60 border border-neutral-700 text-amber-200"
-                onClick={() => testSfx('cannon')}
-              >
-                💥 Cannon
-              </button>
-              <button
-                type="button"
-                className="py-1 px-1.5 rounded bg-neutral-800 hover:bg-amber-900/60 border border-neutral-700 text-amber-200"
-                onClick={() => testSfx('coin')}
-              >
-                💰 Gold
-              </button>
-              <button
-                type="button"
-                className="py-1 px-1.5 rounded bg-neutral-800 hover:bg-amber-900/60 border border-neutral-700 text-amber-200"
-                onClick={() => testSfx('bell')}
-              >
-                🔔 Bell
-              </button>
-              <button
-                type="button"
-                className="py-1 px-1.5 rounded bg-neutral-800 hover:bg-amber-900/60 border border-neutral-700 text-amber-200"
-                onClick={() => testSfx('sword')}
-              >
-                ⚔️ Clash
-              </button>
-              <button
-                type="button"
-                className="py-1 px-1.5 rounded bg-neutral-800 hover:bg-amber-900/60 border border-neutral-700 text-amber-200"
-                onClick={() => testSfx('waves')}
-              >
-                🌊 Ocean
-              </button>
-              <button
-                type="button"
-                className="py-1 px-1.5 rounded bg-neutral-800 hover:bg-amber-900/60 border border-neutral-700 text-amber-200"
-                onClick={() => testSfx('fanfare')}
-              >
-                🎺 Fanfare
-              </button>
             </div>
           </div>
         </div>
