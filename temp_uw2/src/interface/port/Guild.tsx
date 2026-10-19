@@ -33,6 +33,11 @@ export default function Guild() {
   const [loadingBounties, setLoadingBounties] = useState<boolean>(false);
   const [influenceData, setInfluenceData] = useState<any[]>([]);
   const [contestedPorts, setContestedPorts] = useState<any[]>([]);
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    return explorationManager.subscribe(() => setTick((t) => t + 1));
+  }, []);
 
   useEffect(() => {
     if (option === 'Job Assignment' && activeTab === 'bounties') {
@@ -247,42 +252,95 @@ export default function Guild() {
 
             {/* Regional Charts Store */}
             <div className="mt-3 pt-3 border-t border-[#523b24]">
-              <div className="text-[11px] font-bold text-amber-300 uppercase mb-2">
-                Cartographer's Sea Charts for Sale
-              </div>
-              <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
-                {(Object.keys(REGIONAL_CHARTS) as RegionalChartKey[]).map((key) => {
-                  const chart = REGIONAL_CHARTS[key];
-                  return (
-                    <div
-                      key={key}
-                      className="flex items-center justify-between p-2 rounded bg-[#19120c] border border-[#3d2b1b] text-xs"
-                    >
-                      <div>
-                        <div className="font-bold text-amber-200">{chart.name}</div>
-                        <div className="text-[10px] text-gray-400">{chart.description}</div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          if (state.gold < chart.price) {
-                            setCartoMessage(`Not enough gold! This chart costs ${chart.price.toLocaleString()} G.`);
-                            return;
-                          }
-                          state.gold -= chart.price;
-                          const revealed = explorationManager.unlockRegionalChart(key);
-                          soundManager.playSfx('coin');
-                          setCartoMessage(
-                            `🗺️ Acquired ${chart.name}!\n\nRevealed ${revealed} new nautical sectors across the region. View them on your World Atlas [M]!`,
-                          );
-                        }}
-                        className="px-3 py-1 bg-amber-900 hover:bg-amber-800 text-yellow-200 border border-amber-600 rounded font-bold text-[11px] transition-colors whitespace-nowrap ml-2"
-                      >
-                        {chart.price.toLocaleString()} G
-                      </button>
+              {(() => {
+                const chartKeys = Object.keys(REGIONAL_CHARTS) as RegionalChartKey[];
+                const acquiredCount = chartKeys.filter(
+                  (k) =>
+                    Boolean(state.purchasedCharts?.includes(k)) ||
+                    explorationManager.isRegionFullyExplored(k),
+                ).length;
+
+                return (
+                  <>
+                    <div className="text-[11px] font-bold text-amber-300 uppercase mb-2 flex items-center justify-between">
+                      <span>Cartographer's Sea Charts for Sale</span>
+                      <span className="text-[10px] text-amber-200/80 font-normal">
+                        ({acquiredCount} / {chartKeys.length} Acquired)
+                      </span>
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                      {chartKeys.map((key) => {
+                        const chart = REGIONAL_CHARTS[key];
+                        const isPurchased = Boolean(state.purchasedCharts?.includes(key));
+                        const isFullyExplored = explorationManager.isRegionFullyExplored(key);
+                        const isOwned = isPurchased || isFullyExplored;
+
+                        return (
+                          <div
+                            key={key}
+                            className={`flex items-center justify-between p-2 rounded border text-xs transition-colors ${
+                              isOwned
+                                ? 'bg-[#15221b]/90 border-emerald-900/80'
+                                : 'bg-[#19120c] border-[#3d2b1b]'
+                            }`}
+                          >
+                            <div className="pr-2">
+                              <div className="font-bold flex items-center space-x-1.5">
+                                <span className={isOwned ? 'text-emerald-200' : 'text-amber-200'}>
+                                  {chart.name}
+                                </span>
+                                {isOwned && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-600/70 text-emerald-300 font-normal">
+                                    {isPurchased ? '✓ In Logbook' : '✓ Fully Charted'}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-gray-400">{chart.description}</div>
+                            </div>
+
+                            {isOwned ? (
+                              <div
+                                title="This regional sea chart is already in your navigation logbook."
+                                className="px-3 py-1 bg-emerald-950/70 text-emerald-400 border border-emerald-700/60 rounded font-semibold text-[11px] whitespace-nowrap ml-2 cursor-default select-none"
+                              >
+                                ✓ Acquired
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (state.gold < chart.price) {
+                                    setCartoMessage(
+                                      `Not enough gold! This chart costs ${chart.price.toLocaleString()} G.`,
+                                    );
+                                    return;
+                                  }
+                                  state.gold -= chart.price;
+                                  if (!state.purchasedCharts) {
+                                    state.purchasedCharts = [];
+                                  }
+                                  if (!state.purchasedCharts.includes(key)) {
+                                    state.purchasedCharts.push(key);
+                                  }
+                                  const revealed = explorationManager.unlockRegionalChart(key);
+                                  soundManager.playSfx('coin');
+                                  setCartoMessage(
+                                    `🗺️ Acquired ${chart.name}!\n\nRevealed ${revealed} new nautical sectors across the region. View them on your World Atlas [M]!`,
+                                  );
+                                  setTick((t) => t + 1);
+                                }}
+                                className="px-3 py-1 bg-amber-900 hover:bg-amber-800 text-yellow-200 border border-amber-600 rounded font-bold text-[11px] transition-colors whitespace-nowrap ml-2 cursor-pointer"
+                              >
+                                {chart.price.toLocaleString()} G
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             {cartoMessage && (

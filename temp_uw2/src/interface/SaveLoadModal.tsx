@@ -113,6 +113,7 @@ export default function SaveLoadModal({
           discoveredSupplyPorts: state.discoveredSupplyPorts || [],
           discoveredPorts: state.discoveredPorts || [],
           crewAssignment: state.crewAssignment || { navigation: 70, lookout: 20, combat: 10 },
+          purchasedCharts: state.purchasedCharts || [],
         },
       });
       await loadSlots();
@@ -248,6 +249,9 @@ export default function SaveLoadModal({
       }
       if (payload.crewAssignment) {
         state.crewAssignment = payload.crewAssignment;
+      }
+      if (payload.purchasedCharts) {
+        state.purchasedCharts = payload.purchasedCharts;
       }
       
       const targetPortId = payload.portId || slot.current_port_id || '1';

@@ -215,9 +215,9 @@
   - Created `server/admin/users.php` and `AdminModal.tsx` in `TopBar.tsx`.
   - Full player account management, user search, role assignment, active ban toggling, and multi-slot save game statistics.
 - [x] **Task 8.3: Audio Pipeline (Yoko Kanno's Soundtrack & Web Audio SFX Engine)** (Completed)
-  - Built `soundManager.ts` featuring Web Audio API synthesis for authentic 16-bit sound effects without missing audio files (Naval Cannon blasts, Market Coin clinks, Ship Watch Bell chimes, Captain Duel Sword clashes, Ocean Waves, Victory Fanfare).
-  - Streaming Yoko Kanno OGG soundtrack with dual playback modes: "CD Orchestrated Master" vs "16-Bit FM Synthesizer Emulation" (BiquadFilter retro curve & harmonic saturation).
-  - Upgraded `Sound.tsx` with retro parchment audio settings panel, volume sliders (Master, Music, SFX), mute toggle, and SFX test palette.
+  - Built `soundManager.ts` featuring Web Audio API synthesis for authentic 16-bit sound effects (Naval Cannon blasts, Market Coin clinks, Ship Watch Bell chimes, Captain Duel Sword clashes, Ocean Waves, Victory Fanfare).
+  - Streaming Yoko Kanno OGG soundtrack locked to full dynamic range "CD Master" acoustic orchestrations (20 Hz – 20,000 Hz unattenuated frequency fidelity).
+  - Streamlined `Sound.tsx` audio settings panel: removed synthesized sound effects test palette and redundant FM synth toggle, displaying track metadata, composer, CD Master quality badge, and independent Master, Music, and SFX volume sliders.
 - [x] **Task 8.4: Hetzner Debian 13 Production Deployment** (Completed)
   - Verified production Vite build (`npm run build`) compiling clean WASM tilemaps, OGG audio, and minified bundles in 1.05s.
   - Built comprehensive Virtualmin LAMP deployment automation package: `deploy/deploy.sh`, `deploy/setup_database.sh`, `deploy/virtualmin-apache.conf`, `deploy/virtualmin-nginx.conf`, `deploy/.htaccess`, and `deploy/DEPLOYMENT_GUIDE.md`.
@@ -231,7 +231,11 @@
 - [x] **Task 9.1: Sector Cartography & Exploration Bitmask Engine (`explorationManager.ts`)** (Completed)
   - Divided the 2160x1080 world into authentic 20x20 tile nautical sectors ($108 \times 54 = 5,832$ sectors total).
   - Track explored vs uncharted sectors persistently via compact Base64 bitmask in local state & save slots for Single Player, with server sync in MP.
-  - Cartographer regional sea charts purchasable at Maritime Guild (Mediterranean, Northern Europe, Caribbean, Indian Ocean, Far East) and cartography contract atlas submission for gold/fame.
+  - Cartographer regional sea charts for sale at Maritime Guild / Admiralty Board with duplicate purchase prevention:
+    - Retains charts in the sales catalog to provide full regional visibility while disabling re-purchasing with a `✓ Acquired` status badge (`✓ In Logbook` / `✓ Fully Charted`).
+    - Smart survey detection (`isRegionFullyExplored`): automatically recognizes regions naturally mapped by ship exploration and flags them as acquired without charging gold.
+    - Added `purchasedCharts` tracking to game state and save/load serializer (`SaveLoadModal.tsx`), with a live catalog progress counter `(X / 5 Acquired)`.
+  - Cartography contract atlas submission for gold bounty and adventure fame rewards based on newly reported sectors.
 - [x] **Task 9.2: 16-Bit Tile-Aligned Jagged Fog of War Shroud & Flagship Lookout (`fogOfWarRenderer.ts`)** (Completed)
   - Render authentic retro 16-bit tile-aligned staircase jagged shroud adhering strictly to $32 \times 32$ world tiles.
   - Explored waters keep permanently revealed while sailing (charted ocean, coastlines, and ports stay uncovered).

@@ -259,6 +259,28 @@ class ExplorationManager {
     return count;
   }
 
+  /**
+   * Checks whether all sectors within a regional chart bounding box are fully explored.
+   */
+  public isRegionFullyExplored(chartKey: RegionalChartKey): boolean {
+    const chart = REGIONAL_CHARTS[chartKey];
+    if (!chart) return false;
+
+    const minSecX = Math.floor(chart.minX / SECTOR_SIZE);
+    const maxSecX = Math.floor(chart.maxX / SECTOR_SIZE);
+    const minSecY = Math.floor(chart.minY / SECTOR_SIZE);
+    const maxSecY = Math.floor(chart.maxY / SECTOR_SIZE);
+
+    for (let sy = minSecY; sy <= maxSecY; sy++) {
+      for (let sx = minSecX; sx <= maxSecX; sx++) {
+        if (!this.isSectorExplored(sx, sy)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
   public getExploredCount(): number {
     let count = 0;
     for (let i = 0; i < this.explored.length; i++) {

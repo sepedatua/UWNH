@@ -74,6 +74,7 @@ describe('Milestone 9: Fog of War, Nautical Cartography & Sea Weather Anomalies'
       expect(explorationManager.getExploredCount()).toBe(beforeCount + revealed);
       // Lisbon is in the Mediterranean chart
       expect(explorationManager.isPositionExplored(840, 358)).toBe(true);
+      expect(explorationManager.isRegionFullyExplored('mediterranean')).toBe(true);
     });
 
     it('calculates gold and adventure fame rewards when submitting cartography atlas', () => {
@@ -207,6 +208,19 @@ describe('Milestone 9: Fog of War, Nautical Cartography & Sea Weather Anomalies'
       expect(explorationManager.isTileExplored(840, 358)).toBe(true);
       expect(explorationManager.isTileExplored(845, 360)).toBe(true);
       expect(explorationManager.isTileExplored(1500, 500)).toBe(true);
+    });
+
+    it('tracks purchased regional sea charts and identifies already acquired charts', () => {
+      expect(explorationManager.isRegionFullyExplored('north_europe')).toBe(false);
+
+      state.purchasedCharts = [];
+      expect(state.purchasedCharts.includes('north_europe')).toBe(false);
+
+      state.purchasedCharts.push('north_europe');
+      explorationManager.unlockRegionalChart('north_europe');
+
+      expect(state.purchasedCharts.includes('north_europe')).toBe(true);
+      expect(explorationManager.isRegionFullyExplored('north_europe')).toBe(true);
     });
   });
 });

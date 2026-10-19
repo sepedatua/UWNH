@@ -4,6 +4,7 @@ import type { Port } from '../game/port/port';
 import type { World } from '../game/world/world';
 import type { QuestId } from '../interface/quest/questData';
 import { ItemId } from '../data/itemData';
+import type { RegionalChartKey } from '../game/world/explorationManager';
 
 export type Stage = 'world' | 'port' | 'building';
 
@@ -107,6 +108,7 @@ export interface State {
     combat: number;
   };
   luck?: number;
+  purchasedCharts?: RegionalChartKey[];
   isPaused: boolean;
 }
 
@@ -173,6 +175,7 @@ const state = {
     combat: 10,
   },
   luck: 80,
+  purchasedCharts: [] as RegionalChartKey[],
   isPaused: false,
   ...savedState,
 } as State;
