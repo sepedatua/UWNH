@@ -1,6 +1,7 @@
 import state from './state';
-import { getPortData, portAdjacentAt } from '../game/port/portUtils';
+import { getPortData, portAdjacentAt, getClosestRegularPort } from '../game/port/portUtils';
 import createPort from '../game/port/port';
+import npcFleetManager from '../game/world/npcFleetManager';
 import Input from '../input';
 import updateInterface from './updateInterface';
 import { updateGeneral } from './actionsPort';
@@ -216,27 +217,134 @@ export const setSail = () => {
   updateProvisions();
 };
 
+/**
+ * Instantly docks player fleet safely into a target port (used for rescue after shipwreck/defeat)
+ */
+export const dockToPort = (portId: string) => {
+  const portData = getPortData(portId);
+  const playerFleet = state.fleets[1] || state.fleets['1'];
+
+  if (autopilotManager.isActive()) {
+    autopilotManager.cancelCourse('Autopilot Disengaged: Docked in harbor.');
+  }
+
+  if (playerFleet && portData.position) {
+    playerFleet.position = { ...portData.position };
+  }
+
+  (state as any).world = null;
+  state.port = createPort(portId);
+  state.portId = portId;
+  state.buildingId = null;
+
+  Input.reset();
+  updateGeneral();
+
+  state.dayAtSea = 0;
+  updateInterface.dayAtSea?.(state.dayAtSea);
+  updateInterface.nearbyPort?.(null);
+  soundManager.playSfx('bell');
+};
+
 export const triggerCombat = (
   enemyFleetName = 'Barbary Corsair Fleet',
   enemyCommodoreName = 'Khayr ad-Din Barbarossa',
+  enemyFleetId?: string,
 ) => {
   state.inCombat = true;
-  state.combatEncounter = { enemyFleetName, enemyCommodoreName };
+  state.combatEncounter = { enemyFleetName, enemyCommodoreName, enemyFleetId };
   updateInterface.combat?.(true, state.combatEncounter);
 };
 
-export const endCombat = (victory: boolean) => {
+export const endCombat = (
+  victory: boolean,
+  outcome: 'victory' | 'defeat' | 'escaped' = victory ? 'victory' : 'defeat',
+) => {
+  const encounter = state.combatEncounter;
   state.inCombat = false;
   state.combatEncounter = null;
   updateInterface.combat?.(false, null);
-  updateGeneral();
-  if (victory) {
+
+  // Set 10-second post-combat ambush immunity cooldown
+  state.combatCooldownUntil = Date.now() + 10000;
+
+  if (outcome === 'victory') {
+    // 1. Victory: permanently despawn defeated enemy fleet so it never re-triggers
+    npcFleetManager.despawnEncounterFleet(encounter?.enemyFleetId, encounter?.enemyFleetName);
+
     updateInterface.seaAlert?.({
       id: generateId(),
       type: 'info',
       text: '⚔️ Returned to open sea victorious! Enemy fleet routed and plundered.',
       timestamp: Date.now(),
     });
+    updateGeneral();
+  } else if (outcome === 'escaped') {
+    // 2. Escaped / Disengaged: push hostile fleet back and reset to patrol
+    npcFleetManager.pushAwayFleet(encounter?.enemyFleetId, 18);
+    state.combatCooldownUntil = Date.now() + 15000;
+
+    updateInterface.seaAlert?.({
+      id: generateId(),
+      type: 'info',
+      text: '💨 Disengaged from combat! Slid away beyond the enemy’s visual horizon.',
+      timestamp: Date.now(),
+    });
+    updateGeneral();
+  } else {
+    // 3. Defeat: Flagship sunk / fleet routed
+    npcFleetManager.despawnEncounterFleet(encounter?.enemyFleetId, encounter?.enemyFleetName);
+
+    if (state.gameMode === 'sp_scenario') {
+      const playerFleet = state.fleets[1] || state.fleets['1'];
+      const playerPos = playerFleet?.position || { x: 840, y: 358 };
+      const nearest = getClosestRegularPort(playerPos);
+
+      // Penalties: 50% gold lost, cargo lost on flagship, morale drop
+      const goldLost = Math.floor(state.gold / 2);
+      state.gold = Math.max(0, state.gold - goldLost);
+      state.morale = Math.max(30, state.morale - 40);
+
+      // Ensure player has a seaworthy vessel
+      if (playerFleet) {
+        if (!playerFleet.ships || playerFleet.ships.length === 0) {
+          playerFleet.ships = [
+            {
+              id: '1',
+              name: 'Salvaged Flagship',
+              durability: 15,
+              crew: 10,
+              cargo: [
+                { type: 'food', quantity: 10 },
+                { type: 'water', quantity: 10 },
+              ],
+            },
+          ];
+        } else {
+          const flagship = playerFleet.ships[0];
+          flagship.durability = Math.max(15, flagship.durability);
+          flagship.crew = Math.max(10, flagship.crew);
+          flagship.cargo = [
+            { type: 'food', quantity: 10 },
+            { type: 'water', quantity: 10 },
+          ];
+        }
+      }
+
+      // Tow into port safely
+      dockToPort(nearest.id);
+
+      updateInterface.seaAlert?.({
+        id: generateId(),
+        type: 'warning',
+        text: `⚓ Rescued from shipwreck! Passing fishermen towed your battered vessel to ${nearest.name}. ${goldLost > 0 ? `${goldLost} Gold and your` : 'Your'} cargo were lost to the corsairs.`,
+        timestamp: Date.now(),
+      });
+    } else {
+      // Permadeath mode
+      state.isAlive = false;
+      updateGeneral();
+    }
   }
 };
 

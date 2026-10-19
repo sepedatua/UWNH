@@ -126,3 +126,36 @@ export const getRegionOrIfSupplyPort = (portId: string) => {
 
   return 'Supply port';
 };
+
+/**
+ * Finds the closest regular port (with harbor, shipyard, tavern, etc.) to given coordinates
+ * using cylindrical world map wrapping.
+ */
+export const getClosestRegularPort = (
+  position: Position,
+): { id: string; name: string; position: Position } => {
+  let closestPort = regularPorts[0];
+  let closestId = '1';
+  let minDistance = Infinity;
+
+  regularPorts.forEach((port, idx) => {
+    let dx = Math.abs(port.position.x - position.x);
+    if (dx > WORLD_MAP_COLUMNS / 2) {
+      dx = WORLD_MAP_COLUMNS - dx;
+    }
+    const dy = Math.abs(port.position.y - position.y);
+    const dist = Math.hypot(dx, dy);
+    if (dist < minDistance) {
+      minDistance = dist;
+      closestPort = port;
+      closestId = String(idx + 1);
+    }
+  });
+
+  return {
+    id: closestId,
+    name: closestPort.name,
+    position: closestPort.position,
+  };
+};
+

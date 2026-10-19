@@ -455,6 +455,13 @@
   - Authentic 1v1 duel system (`SwordDuelModal.tsx` & `duelEngine.ts`): 0–200 balance meter, weapon family mechanics (Fencing +25% thrust, Curved +25% slash, Heavy +25% strike, Straight +5% balanced), armor damage absorption, and authentic duel sound effects.
   - Post-Battle Prize Capture screen (`PrizeCaptureModal.tsx`): plays authentic *Capturing Enemies' Ships* BGM, displays captured enemy vessels, allows assigning available mates as captains, looting cargo/provisions/gold, recruiting surviving sailors, and scuttling unwanted hulls. **[PLAYABLE MILESTONE: Authentic Koei naval battles, 52x48 staggered hex grid, parabolic ballistics, flagship tactics, 1v1 captain sword duels, and prize vessel capture!]**
 
+- [x] **Task 14.6: Post-Battle Lifecycle Resolution, Defeat/Loss Tow-to-Port Recovery & Loop Prevention Engine** (Completed)
+  - Solved infinite combat repetition loop: on victory, defeated enemy NPC fleets are cleanly and permanently despawned (`despawnEncounterFleet`) from `npcFleetManager` and `state.fleets`, purging their canvas sprites.
+  - Implemented authentic Koei defeat/loss tow-to-port recovery: when defeated in scenario mode (`sp_scenario`), passing fishermen rescue the captain and tow the vessel to the closest friendly regular port (`getClosestRegularPort`) with salvage/piracy penalties (50% gold loss, flagship cargo lost, minimal 15 durability / 10 crew restoration), preventing game-breaking defeat loops.
+  - Supported Permadeath mode (`sp_endless` / `mp_endless`): properly marks `state.isAlive = false` on defeat and displays the "All Hands Lost" terminal modal without re-triggering combat.
+  - Added 10–15s post-combat ambush immunity grace period (`combatCooldownUntil`) preventing consecutive instant ambush loops from adjacent fleets.
+  - Fixed flagship retreat bug: fleeing to battlefield border now transitions to dedicated `'escaped'` disengagement phase rather than defeat, pushing pursuing raiders back 18 tiles.
+
 ---
 
 ## Milestone 15: Tavern Mate Recruitment, Fleet Captain Appointment & Bridge Officer System (Sprint 16)

@@ -40,6 +40,7 @@ export class NpcFleetManager {
   private activeFleets: Map<string, NpcFleetInstance> = new Map();
   private nextFleetId = 2; // '1' is reserved for player
   private lastBasin: RegionalBasin | null = null;
+  private lastSpawnCheckPos: Position | null = null;
 
   public getActiveFleets(): NpcFleetInstance[] {
     return Array.from(this.activeFleets.values());
@@ -263,6 +264,63 @@ export class NpcFleetManager {
       }
     }
     return true;
+  }
+
+  /**
+   * Permanently removes and despawns an active NPC fleet.
+   */
+  public despawnFleet(fleetId: string): void {
+    this.activeFleets.delete(fleetId);
+    delete state.fleets[fleetId];
+    this.syncToGlobalState();
+  }
+
+  /**
+   * Despawns an NPC fleet encountered in combat either by its ID, template name,
+   * or by proximity to the player.
+   */
+  public despawnEncounterFleet(fleetId?: string, fleetName?: string): void {
+    if (fleetId && this.activeFleets.has(fleetId)) {
+      this.despawnFleet(fleetId);
+      return;
+    }
+
+    const playerFleet = state.fleets[1] || state.fleets['1'];
+    if (!playerFleet?.position) return;
+
+    // Search for fleet matching fleetName or closest hostile fleet within 3.5 tiles
+    for (const [id, f] of this.activeFleets.entries()) {
+      if (fleetName && f.name === fleetName) {
+        this.despawnFleet(id);
+        return;
+      }
+      let dx = Math.abs(playerFleet.position.x - f.position.x);
+      if (dx > 1080) dx = 2160 - dx;
+      const dy = Math.abs(playerFleet.position.y - f.position.y);
+      if (Math.hypot(dx, dy) <= 3.5 && f.hostile) {
+        this.despawnFleet(id);
+        return;
+      }
+    }
+  }
+
+  /**
+   * Pushes a fleet away from the player (e.g. after player disengages/escapes)
+   * and resets its AI state back to patrolling.
+   */
+  public pushAwayFleet(fleetId?: string, distanceTiles = 18): void {
+    const fleet = fleetId ? this.activeFleets.get(fleetId) : undefined;
+    const target = fleet || Array.from(this.activeFleets.values()).find((f) => f.hostile);
+    if (!target) return;
+
+    target.aiState = 'patrolling';
+    const playerFleet = state.fleets[1] || state.fleets['1'];
+    if (playerFleet?.position) {
+      const angle = Math.random() * Math.PI * 2;
+      target.position.x = ((Math.round(playerFleet.position.x + Math.cos(angle) * distanceTiles) % 2160) + 2160) % 2160;
+      target.position.y = Math.max(20, Math.min(1060, Math.round(playerFleet.position.y + Math.sin(angle) * distanceTiles)));
+    }
+    this.syncToGlobalState();
   }
 
   /**

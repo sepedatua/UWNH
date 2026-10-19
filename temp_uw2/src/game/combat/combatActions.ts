@@ -109,9 +109,11 @@ export const syncCombatResultsToGameState = (combatState: CombatState): void => 
     survivingShips.push(existing);
   });
 
-  if (survivingShips.length > 0) {
-    playerFleet.ships = survivingShips;
-  }
+  // Preserve any prize ships commissioned during prize capture phase
+  const commissionedPrizeShips = playerFleet.ships.slice(playerCombatShips.length);
+  survivingShips.push(...commissionedPrizeShips);
+
+  playerFleet.ships = survivingShips;
 };
 
 /**
@@ -838,9 +840,21 @@ export const checkCombatEnd = (combatState: CombatState): void => {
     (s) => s.team === 'enemy' && !s.isSunk && !s.isSurrendered && !s.hasFled,
   );
 
-  const playerFlagshipAlive = playerShipsAlive.some((s) => s.isFlagship);
-  const enemyFlagshipAlive = enemyShipsAlive.some((s) => s.isFlagship);
+  const playerFlagship = combatState.ships.find((s) => s.team === 'player' && s.isFlagship);
+  const enemyFlagship = combatState.ships.find((s) => s.team === 'enemy' && s.isFlagship);
 
+  // Case 1: Flagship disengaged and successfully fled to perimeter
+  if (playerFlagship?.hasFled) {
+    soundManager.setBattlePhase(null);
+    combatState.phase = 'escaped';
+    combatState.log.unshift('💨 ESCAPED! Flagship disengaged beyond the horizon!');
+    return;
+  }
+
+  const playerFlagshipAlive = playerFlagship && !playerFlagship.isSunk && !playerFlagship.isSurrendered;
+  const enemyFlagshipAlive = enemyFlagship && !enemyFlagship.isSunk && !enemyFlagship.isSurrendered && !enemyFlagship.hasFled;
+
+  // Case 2: Victory (all enemy ships disabled/fled or enemy flagship defeated)
   if (!enemyShipsAlive.length || !enemyFlagshipAlive) {
     // VICTORY! Enter Prize Capture Phase with authentic BGM
     soundManager.setBattlePhase('prize');
@@ -887,6 +901,7 @@ export const checkCombatEnd = (combatState: CombatState): void => {
     return;
   }
 
+  // Case 3: Defeat (flagship sunk/surrendered, or all player ships disabled)
   if (!playerShipsAlive.length || !playerFlagshipAlive) {
     // DEFEAT!
     soundManager.setBattlePhase('defeat');

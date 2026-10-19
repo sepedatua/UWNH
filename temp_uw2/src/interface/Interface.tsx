@@ -43,6 +43,7 @@ function Interface({ resolve }: Props) {
   const [inCombat, setInCombat] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [combatEncounter, setCombatEncounter] = useState<{
+    enemyFleetId?: string;
     enemyFleetName: string;
     enemyCommodoreName: string;
   } | null>(null);
@@ -119,7 +120,8 @@ function Interface({ resolve }: Props) {
               <BattleArena
                 enemyFleetName={combatEncounter?.enemyFleetName}
                 enemyCommodoreName={combatEncounter?.enemyCommodoreName}
-                onCombatConcluded={(victory) => endCombat(victory)}
+                enemyFleetId={combatEncounter?.enemyFleetId}
+                onCombatConcluded={(victory, outcome) => endCombat(victory, outcome)}
               />
             </ErrorBoundary>
           )}

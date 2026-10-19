@@ -69,7 +69,9 @@ export interface State {
   portInvestments: Record<string, number>;
   morale: number;
   inCombat: boolean;
+  combatCooldownUntil?: number;
   combatEncounter: {
+    enemyFleetId?: string;
     enemyFleetName: string;
     enemyCommodoreName: string;
   } | null;
@@ -149,6 +151,7 @@ const state = {
   portInvestments: {},
   morale: 80,
   inCombat: false,
+  combatCooldownUntil: 0,
   combatEncounter: null,
   waitressFavor: {},
   nobilityRank: 0,

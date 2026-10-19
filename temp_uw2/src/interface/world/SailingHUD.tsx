@@ -136,7 +136,7 @@ export default function SailingHUD() {
       } else if ((e.key === 'h' || e.key === 'H') && closestNpcFleet) {
         setActiveEncounterFleet(closestNpcFleet);
       } else if ((e.key === 'a' || e.key === 'A') && closestNpcFleet) {
-        triggerCombat(closestNpcFleet.name, closestNpcFleet.captainName);
+        triggerCombat(closestNpcFleet.name, closestNpcFleet.captainName, closestNpcFleet.id);
       } else if ((e.key === 'i' || e.key === 'I') && interceptFleet) {
         handleIntercept();
       } else if (e.key === 'Escape') {
@@ -254,7 +254,12 @@ export default function SailingHUD() {
       }
 
       // 4. Pirate Ambush (Task 11.5): If hostile pirate closes to <= 1.2 tiles, trigger combat automatically!
-      if (state.portId === null && !state.inCombat) {
+      if (
+        state.portId === null &&
+        !state.inCombat &&
+        state.isAlive !== false &&
+        (!state.combatCooldownUntil || Date.now() >= state.combatCooldownUntil)
+      ) {
         const ambusher = broaderVicinity.find(
           (f) =>
             f.hostile &&
@@ -262,7 +267,7 @@ export default function SailingHUD() {
         );
         if (ambusher) {
           soundManager.playSfx('shipBell');
-          triggerCombat(ambusher.name, ambusher.captainName);
+          triggerCombat(ambusher.name, ambusher.captainName, ambusher.id);
         }
       }
     };

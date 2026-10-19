@@ -55,7 +55,7 @@ export default function AtSeaEncounterModal({ fleet, onClose }: Props) {
     logger.warn('AtSeaEncounter', `Capitain attacked fleet: ${fleet.name} commanded by ${fleet.captainName}`);
     soundManager.playSfx('shipBell');
     onClose();
-    triggerCombat(fleet.name, fleet.captainName);
+    triggerCombat(fleet.name, fleet.captainName, fleet.id);
   };
 
   const flagship = fleet.ships[0];

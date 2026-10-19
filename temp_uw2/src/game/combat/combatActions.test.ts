@@ -19,6 +19,9 @@ import {
   setFleetPlan,
 } from './combatActions';
 import { staggeredBroadsideHexes } from './hexUtils';
+import { endCombat, triggerCombat } from '../../state/actionsWorld';
+import npcFleetManager from '../world/npcFleetManager';
+import { getClosestRegularPort } from '../port/portUtils';
 
 describe('combatActions', () => {
   beforeEach(() => {
@@ -205,5 +208,96 @@ describe('combatActions', () => {
     expect(result.duelTriggered).toBe(true);
     expect(combat.phase).toBe('duel');
     expect(combat.duelState).not.toBeNull();
+  });
+
+  test('fleeShip triggers escaped phase when player flagship reaches boundary', () => {
+    const combat = createCombatEngagement();
+    const playerShip = combat.ships[0];
+    playerShip.hex = { q: 1, r: 24 };
+
+    const fled = fleeShip(playerShip.id, combat);
+    expect(fled).toBe(true);
+    expect(combat.phase).toBe('escaped');
+  });
+
+  test('endCombat victory cleanly despawns defeated enemy fleet and grants combat immunity', () => {
+    // Setup an active NPC pirate fleet near player
+    npcFleetManager.populateBasin('mediterranean', { x: 840, y: 358 });
+    const pirate = npcFleetManager.getActiveFleets().find((f) => f.hostile) || npcFleetManager.getActiveFleets()[0];
+    expect(pirate).toBeDefined();
+
+    triggerCombat(pirate.name, pirate.captainName, pirate.id);
+    expect(state.inCombat).toBe(true);
+    expect(state.combatEncounter?.enemyFleetId).toBe(pirate.id);
+
+    // End combat with victory
+    endCombat(true, 'victory');
+
+    expect(state.inCombat).toBe(false);
+    expect(state.combatEncounter).toBeNull();
+    // Enemy fleet must be completely removed from manager and state
+    expect(npcFleetManager.getFleetById(pirate.id)).toBeUndefined();
+    expect(state.fleets[pirate.id]).toBeUndefined();
+    // 10s grace period
+    expect(state.combatCooldownUntil).toBeGreaterThan(Date.now() + 5000);
+  });
+
+  test('endCombat defeat in sp_scenario rescues player to nearest regular port with penalties', () => {
+    state.gameMode = 'sp_scenario';
+    state.gold = 10000;
+    state.portId = null;
+    state.morale = 80;
+    state.fleets['1'].position = { x: 845, y: 360 }; // Near Lisbon (840, 358)
+    state.fleets['1'].ships = [
+      {
+        id: '1',
+        name: 'São Gabriel',
+        durability: 0,
+        crew: 0,
+        cargo: [{ type: 'silver', quantity: 20 }],
+      },
+    ];
+
+    triggerCombat('Barbary Fleet', 'Khayr ad-Din');
+    endCombat(false, 'defeat');
+
+    expect(state.inCombat).toBe(false);
+    expect(state.isAlive).toBe(true);
+    // Player rescued to nearest port (Lisbon, Port '1')
+    expect(state.portId).toBe('1');
+    expect(state.dayAtSea).toBe(0);
+    // Gold penalty: 50% lost
+    expect(state.gold).toBe(5000);
+    // Flagship salvaged to seaworthiness
+    expect(state.fleets['1'].ships[0].durability).toBeGreaterThanOrEqual(15);
+    expect(state.fleets['1'].ships[0].crew).toBeGreaterThanOrEqual(10);
+  });
+
+  test('endCombat defeat in endless mode triggers permadeath', () => {
+    state.gameMode = 'sp_endless';
+    state.isAlive = true;
+
+    triggerCombat('Pirate Raider', 'Blackbeard');
+    endCombat(false, 'defeat');
+
+    expect(state.inCombat).toBe(false);
+    expect(state.isAlive).toBe(false);
+  });
+
+  test('endCombat escaped pushes hostile fleet away and grants 15s grace period', () => {
+    npcFleetManager.populateBasin('mediterranean', { x: 840, y: 358 });
+    const pirate = npcFleetManager.getActiveFleets().find((f) => f.hostile) || npcFleetManager.getActiveFleets()[0];
+
+    triggerCombat(pirate.name, pirate.captainName, pirate.id);
+    endCombat(false, 'escaped');
+
+    expect(state.inCombat).toBe(false);
+    // Hostile fleet should still exist but pushed away and set to patrolling
+    const fleetAfter = npcFleetManager.getFleetById(pirate.id);
+    if (fleetAfter) {
+      expect(fleetAfter.aiState).toBe('patrolling');
+    }
+    // 15s grace period
+    expect(state.combatCooldownUntil).toBeGreaterThan(Date.now() + 10000);
   });
 });

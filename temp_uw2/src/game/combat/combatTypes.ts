@@ -194,7 +194,8 @@ export interface CombatState {
     | 'duel'
     | 'prize_capture'
     | 'victory'
-    | 'defeat';
+    | 'defeat'
+    | 'escaped';
   log: string[];
   duelState: DuelState | null;
   floatingDamages: FloatingDamage[];

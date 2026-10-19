@@ -40,9 +40,10 @@ import soundManager from '../sound/soundManager';
 import state from '../../state/state';
 
 interface Props {
-  onCombatConcluded: (victory: boolean) => void;
+  onCombatConcluded: (victory: boolean, outcome?: 'victory' | 'defeat' | 'escaped') => void;
   enemyFleetName?: string;
   enemyCommodoreName?: string;
+  enemyFleetId?: string;
 }
 
 const TILE_PX = 60; // 60px display scale for 13x12 main viewport
@@ -51,6 +52,7 @@ export default function BattleArena({
   onCombatConcluded,
   enemyFleetName = 'Barbary Corsair Fleet',
   enemyCommodoreName = 'Khayr ad-Din Barbarossa',
+  enemyFleetId: _enemyFleetId,
 }: Props) {
   const mainCanvasRef = useRef<HTMLCanvasElement>(null);
   const miniMapCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -554,9 +556,12 @@ export default function BattleArena({
     triggerUpdate();
   };
 
-  const handleFinishBattle = (victory: boolean) => {
+  const handleFinishBattle = (
+    victory: boolean,
+    outcome: 'victory' | 'defeat' | 'escaped' = victory ? 'victory' : 'defeat',
+  ) => {
     finalizeCombatResults(victory, combatState);
-    onCombatConcluded(victory);
+    onCombatConcluded(victory, outcome);
   };
 
   const selectedTarget = combatState.ships.find((s) => s.id === targetShipId);
@@ -1010,7 +1015,7 @@ export default function BattleArena({
 
             <button
               type="button"
-              onClick={() => handleFinishBattle(true)}
+              onClick={() => handleFinishBattle(true, 'victory')}
               className="w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-extrabold rounded-xl transition-all cursor-pointer shadow text-sm tracking-wider uppercase"
             >
               Claim All Spoils & Return to High Seas
@@ -1032,10 +1037,32 @@ export default function BattleArena({
             </p>
             <button
               type="button"
-              onClick={() => handleFinishBattle(false)}
+              onClick={() => handleFinishBattle(false, 'defeat')}
               className="w-full py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition-all cursor-pointer shadow"
             >
               Acknowledge Defeat
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Disengaged & Escaped Modal */}
+      {combatState.phase === 'escaped' && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-6 select-none font-sans">
+          <div className="max-w-md w-full bg-neutral-900 border-2 border-sky-500 rounded-2xl p-6 text-center shadow-[0_0_50px_rgba(14,165,233,0.4)]">
+            <div className="text-5xl mb-3">💨</div>
+            <h2 className="text-2xl font-extrabold text-sky-400 uppercase tracking-widest font-serif mb-1">
+              Disengaged & Escaped
+            </h2>
+            <p className="text-neutral-300 text-xs mb-6">
+              Your flagship reached the outer boundary and slipped away beyond the horizon. The hostile raiders have lost your trail.
+            </p>
+            <button
+              type="button"
+              onClick={() => handleFinishBattle(false, 'escaped')}
+              className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl transition-all cursor-pointer shadow text-sm tracking-wide font-sans uppercase"
+            >
+              Return to High Seas
             </button>
           </div>
         </div>
