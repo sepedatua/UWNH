@@ -93,12 +93,14 @@ export const repairFleet = (): { success: boolean; message: string } => {
 };
 
 /**
- * Remodel a ship: reallocate capacity between Crew Quarters, Gun Ports, and Cargo Hold
+ * Remodel a ship: reallocate capacity between Crew Quarters, Gun Ports, and Cargo Hold,
+ * and rechristen/rename the vessel.
  */
 export const remodelShip = (
   shipIndex: number,
   newCrewQuarters: number,
   newGuns: number,
+  newName?: string,
 ): { success: boolean; message: string } => {
   const REMODEL_FEE = 200;
   if (state.gold < REMODEL_FEE) {
@@ -127,7 +129,13 @@ export const remodelShip = (
 
   state.gold -= REMODEL_FEE;
 
-  // Apply customizations
+  // Apply customizations & rechristening
+  const oldName = ship.name;
+  const trimmedName = newName?.trim();
+  if (trimmedName && trimmedName.length > 0) {
+    ship.name = trimmedName;
+  }
+
   ship.maxCrew = newCrewQuarters;
   ship.maxGuns = newGuns;
   ship.crew = Math.min(ship.crew, newCrewQuarters);
@@ -135,10 +143,11 @@ export const remodelShip = (
   updateGeneral();
 
   const newCargoHold = capacity - newCrewQuarters - newGuns;
+  const renameNote = trimmedName && trimmedName !== oldName ? ` rechristened to "${ship.name}" and` : '';
 
   return {
     success: true,
-    message: `${ship.name} successfully remodeled! Cargo hold adjusted to ${newCargoHold} crates.`,
+    message: `${ship.name}${renameNote} successfully remodeled! Cargo hold adjusted to ${newCargoHold} crates.`,
   };
 };
 

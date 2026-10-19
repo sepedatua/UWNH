@@ -46,6 +46,7 @@ export default function Shipyard() {
 
   // Remodel state
   const [remodelShipIndex, setRemodelShipIndex] = useState<number | null>(null);
+  const [newShipName, setNewShipName] = useState<string>('');
   const [newCrewQuarters, setNewCrewQuarters] = useState<number>(20);
   const [newGuns, setNewGuns] = useState<number>(10);
 
@@ -243,6 +244,7 @@ export default function Shipyard() {
             setRemodelShipIndex(idx);
             const target = fleet[idx];
             const templ = shipData[target.id];
+            setNewShipName(target.name || templ.name);
             setNewCrewQuarters(target.maxCrew || templ.usedCrew || templ.minimumCrew);
             setNewGuns(target.maxGuns || templ.usedGuns || 0);
           }}
@@ -292,6 +294,34 @@ export default function Shipyard() {
             </div>
           </div>
 
+          {/* Ship Name Rechristening Input */}
+          <div className="mb-3 bg-[#261f17] p-3 rounded border border-[#3d2e1e]">
+            <div className="flex justify-between items-center text-xs mb-1.5">
+              <span className="text-yellow-200">Ship Name (Rechristen):</span>
+              <span className="text-[10px] text-gray-400 font-sans">Max 24 characters</span>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                maxLength={24}
+                value={newShipName}
+                onChange={(e) => setNewShipName(e.target.value)}
+                placeholder="Enter vessel name..."
+                className="flex-1 bg-[#1a140e] border border-[#8c6f4b] rounded px-3 py-1.5 text-xs text-yellow-300 font-bold focus:outline-none focus:border-yellow-500 font-serif"
+              />
+              {newShipName !== ship.name && (
+                <button
+                  type="button"
+                  onClick={() => setNewShipName(ship.name)}
+                  className="px-2 py-1 bg-[#3a2c1d] hover:bg-[#4d3a27] text-neutral-300 text-[10px] rounded border border-[#6b5134] cursor-pointer"
+                  title="Reset to current name"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Crew Quarters Control */}
           <div className="mb-3 bg-[#261f17] p-3 rounded border border-[#3d2e1e]">
             <div className="flex justify-between text-xs mb-1">
@@ -334,14 +364,14 @@ export default function Shipyard() {
             </div>
             <button
               onClick={() => {
-                const res = remodelShip(remodelShipIndex, newCrewQuarters, newGuns);
+                const res = remodelShip(remodelShipIndex, newCrewQuarters, newGuns, newShipName);
                 setStatusMessage(res.message);
                 setRemodelShipIndex(null);
                 reset();
               }}
-              disabled={resultingCargoHold < 0 || state.gold < 200}
+              disabled={resultingCargoHold < 0 || state.gold < 200 || !newShipName.trim()}
               className={`px-4 py-1.5 rounded font-bold uppercase cursor-pointer border ${
-                resultingCargoHold >= 0 && state.gold >= 200
+                resultingCargoHold >= 0 && state.gold >= 200 && newShipName.trim().length > 0
                   ? 'bg-yellow-800 border-yellow-500 text-yellow-100 hover:bg-yellow-700'
                   : 'bg-gray-800 border-gray-600 text-gray-500 cursor-not-allowed'
               }`}

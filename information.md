@@ -218,8 +218,9 @@ Each shipyard belongs to a regional architectural archetype that determines whic
    - When buying a consort ship (Ship #2 through #10), you must have at least one unassigned navigator in your mates roster to assume captaincy of the vessel.
 2. **Fleet Capacity**:
    - A fleet can comprise up to **10 ships maximum**. If your fleet already contains 10 vessels, you must sell or scuttle an existing hull before buying another.
-3. **Remodeling (Refitting Hulls)**:
+3. **Remodeling (Refitting Hulls & Rechristening)**:
    - In any Shipyard, select **"Remodel"** for a nominal **200 Gold** shipyard fee.
+   - **Ship Name (Rechristen)**: You can change/rename any ship in your fleet (up to 24 characters) during remodel.
    - You can redistribute the vessel's total capacity between:
      - **Crew Quarters**: Must stay between `minimumCrew` and `maximumCrew`.
      - **Gun Batteries**: Up to `maximumGuns`.

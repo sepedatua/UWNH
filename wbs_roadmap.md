@@ -51,6 +51,7 @@
 - [x] **Task 2.3: Shipyard Operations & Customization** (Completed)
   - Full Shipyard UI: Used Ships, Fleet Hull Repairs, Ship Remodeling, Sell, and Industrial Investment.
   - Interactive ship capacity reallocation sliders for Crew Quarters, Gun Ports, and Cargo Hold.
+  - Vessel rechristening / renaming during remodel refits (custom vessel naming up to 24 characters).
   - Port industry expansion that unlocks higher-tier historical ship hulls.
 - [x] **Task 2.4: The Pub (Tavern) & Crew Recruitment** (Completed)
   - Full Pub UI: Recruit Crew, Dismiss Crew (frees cargo space & cuts food consumption), Treat Patrons.
